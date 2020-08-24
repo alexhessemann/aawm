@@ -262,6 +262,48 @@ void events( xcb_connection_t* a_conn, xcb_screen_t *a_screen )
 			}
 			break;
 
+			case XCB_SELECTION_CLEAR:
+			{
+				xcb_selection_clear_event_t* e = (xcb_selection_clear_event_t*) ev;
+				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_conn, e->selection );
+				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *name = xcb_get_atom_name_name( reply );
+				printf( "Received selection clear%s from 0x%X, at time %d, atom %s\n", (e->response_type & 0x80) ? " (S)" : "", e->owner, e->time, name );
+			}
+			break;
+
+			case XCB_SELECTION_NOTIFY:
+			{
+				xcb_selection_notify_event_t* e = (xcb_selection_notify_event_t *) ev;
+				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_conn, e->selection );
+				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *selection_name = xcb_get_atom_name_name( reply );
+				cookie = xcb_get_atom_name( a_conn, e->target );
+				reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *type_name = xcb_get_atom_name_name( reply );
+				cookie = xcb_get_atom_name( a_conn, e->property );
+				reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *prop_name = xcb_get_atom_name_name( reply );
+				printf( "Received selection notify%s from 0x%X, at time %d, selection %s, target type %s, in property %s\n", (e->response_type & 0x80) ? " (S)" : "", e->requestor, e->time, selection_name, type_name, prop_name );
+			}
+			break;
+
+			case XCB_SELECTION_REQUEST:
+			{
+				xcb_selection_request_event_t* e = (xcb_selection_request_event_t *) ev;
+				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_conn, e->selection );
+				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *selection_name = xcb_get_atom_name_name( reply );
+				cookie = xcb_get_atom_name( a_conn, e->target );
+				reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *type_name = xcb_get_atom_name_name( reply );
+				cookie = xcb_get_atom_name( a_conn, e->property );
+				reply = xcb_get_atom_name_reply( a_conn, cookie, NULL );
+				char *prop_name = xcb_get_atom_name_name( reply );
+				printf( "Received selection request%s from 0x%X for 0x%X, at time %d, selection %s, target type %s, in property %s\n", (e->response_type & 0x80) ? " (S)" : "", e->requestor, e->owner, e->time, selection_name, type_name, prop_name );
+			}
+			break;
+
 			// Unhandled
 
 			default:
