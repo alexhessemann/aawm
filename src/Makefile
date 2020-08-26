@@ -2,5 +2,5 @@ LDLIBS=-lxcb
 
 CFLAGS=-Wall
 
-aawm:
+aawm: get_constant_string.o
 
