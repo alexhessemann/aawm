@@ -6,8 +6,8 @@
 #include <xcb/xcb_icccm.h>
 
 #include "aawm_ctx.h"
+#include "aawm_window.h"
 //#include "circle_menu.xbm"
-#include "decoration.h"
 #include "get_constant_string.h"
 #include "utfconv.h"
 
@@ -64,8 +64,34 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	char *name = NULL;
 	int name_len;
 	int utf8_string = 0;
-	a_ctx->managed_win = realloc( a_ctx->managed_win, ++(a_ctx->managed_len) * sizeof( struct decoration ) );
-	struct decoration *decor = &a_ctx->managed_win[a_ctx->managed_len - 1];
+
+	// Create internal structures for child windows
+
+	xcb_window_t xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *frame_win = aawm_allocate_window( xid, AAWM_ROLE_FRAME, a_ctx->screen->root );
+	map_add( a_ctx->windows_list, xid, frame_win );
+	aawm_window_t *client_win = aawm_allocate_window( a_ev->window, AAWM_ROLE_CLIENT, frame_win->wid );
+	map_add( a_ctx->windows_list, a_ev->window, client_win );
+	xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *close_win = aawm_allocate_window( xid, AAWM_ROLE_CLOSE, frame_win->wid );
+	map_add( a_ctx->windows_list, xid, close_win );
+	xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *util_win = aawm_allocate_window( xid, AAWM_ROLE_UTILITY, frame_win->wid );
+	map_add( a_ctx->windows_list, xid, util_win );
+	xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *minmax_win = aawm_allocate_window( xid, AAWM_ROLE_MINMAX, frame_win->wid );
+	map_add( a_ctx->windows_list, xid, minmax_win );
+	xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *resize_win = aawm_allocate_window( xid, AAWM_ROLE_RESIZE, frame_win->wid );
+	map_add( a_ctx->windows_list, xid, resize_win );
+
+	aawm_window_add_child( frame_win, client_win->wid );
+	aawm_window_add_child( frame_win, close_win->wid );
+	aawm_window_add_child( frame_win, util_win->wid );
+	aawm_window_add_child( frame_win, minmax_win->wid );
+	aawm_window_add_child( frame_win, resize_win->wid );
+
+	// Read, parse and display properties of the client
 
 	xcb_list_properties_reply_t * props = xcb_list_properties_reply( a_ctx->conn, xcb_list_properties( a_ctx->conn, a_ev->window ), NULL );
 	int prop_count =  xcb_list_properties_atoms_length( props );
@@ -139,26 +165,32 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 		printf( "\n" );
 	}
 
-	uint32_t mask = XCB_CW_EVENT_MASK;
-	uint32_t values_m[2];
-
-	uint32_t values[] = { 0x0FF, 0x0FF00 };
-	uint32_t values2[] = { 0xFF0000 };
-	decor->parent = xcb_generate_id( a_ctx->conn );
-	decor->client = a_ev->window;
-	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
-	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, decor->parent, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL, values );
-
-	values_m[0] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
+	uint32_t event_mask = XCB_CW_EVENT_MASK;
+	uint32_t event_mask_values = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
 		| XCB_EVENT_MASK_ENTER_WINDOW
 		| XCB_EVENT_MASK_LEAVE_WINDOW
 		| XCB_EVENT_MASK_FOCUS_CHANGE
+		| XCB_EVENT_MASK_PROPERTY_CHANGE
 		| XCB_EVENT_MASK_BUTTON_PRESS
-//		| XCB_EVENT_MASK_BUTTON_RELEASE
+		| XCB_EVENT_MASK_BUTTON_RELEASE
 		| XCB_EVENT_MASK_BUTTON_1_MOTION;
 
-	xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( a_ctx->conn, decor->parent, mask, values_m );
+	// used later
+	uint32_t mask;
+	uint32_t values_m[3];
+
+	uint32_t values[] = { 0x0FF, 0x0FF00 };
+	uint32_t values2[] = { 0xFF0000 };
+	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
+
+	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL, values );
+
+	xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( a_ctx->conn, frame_win->wid, event_mask, &event_mask_values );
 	/*xcb_generic_error_t *error =*/ xcb_request_check( a_ctx->conn, cookie );
+	xcb_flush( a_ctx->conn );
+
+	uint32_t prop_test = XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, client_win->wid, XCB_CW_EVENT_MASK, &prop_test ) );
 	xcb_flush( a_ctx->conn );
 
 	xcb_generic_error_t * error;
@@ -175,35 +207,40 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	gc_values[0] = a_ctx->screen->white_pixel;
 	gc_values[1] = a_ctx->screen->black_pixel;
 	gc_values[2] = fid;
-	error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, decor->parent, gc_mask, gc_values ) );
+	error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, frame_win->wid, gc_mask, gc_values ) );
 	if (error != NULL) {
 		printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
 	}
-//	error = xcb_request_check( a_ctx->conn, xcb_poly_text_8_checked( a_ctx->conn, decor->parent, gc, 30, 10, 4, (const unsigned char *)"plop" ) );
+//	error = xcb_request_check( a_ctx->conn, xcb_poly_text_8_checked( a_ctx->conn, frame_win->wid, gc, 30, 10, 4, (const unsigned char *)"plop" ) );
 
-	decor->utility = xcb_generate_id( a_ctx->conn );
-	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, decor->utility, decor->parent, 0, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
-	xcb_map_window( a_ctx->conn, decor->utility );
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, util_win->wid, frame_win->wid, 0, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
+	xcb_map_window( a_ctx->conn, util_win->wid );
 
-	decor->resize = xcb_generate_id( a_ctx->conn );
-	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, decor->resize, decor->parent, 20, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
-	xcb_map_window( a_ctx->conn, decor->resize );
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, minmax_win->wid, frame_win->wid, 20, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
+	xcb_map_window( a_ctx->conn, minmax_win->wid );
 
-	decor->close = xcb_generate_id( a_ctx->conn );
-	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, decor->close, decor->parent, wgeom->width - 19, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
-	mask = XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
-	values_m[0] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_BUTTON_RELEASE;
-	values_m[1] = a_ctx->pirate;
-	cookie = xcb_change_window_attributes_checked( a_ctx->conn, decor->close, mask, values_m );
-	xcb_request_check( a_ctx->conn, cookie );
-	xcb_map_window( a_ctx->conn, decor->close );
+	mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
+	values_m[0] = 0xFF0000;
+	values_m[1] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_BUTTON_PRESS | XCB_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_1_MOTION;
+	values_m[2] = a_ctx->sizing;
 
-	xcb_reparent_window( a_ctx->conn, decor->client, decor->parent, 0, 20 );
-	xcb_map_window( a_ctx->conn, decor->client );
-	xcb_map_window( a_ctx->conn, decor->parent );
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, resize_win->wid, frame_win->wid, wgeom->width - 19, wgeom->height + 21, 19, 9, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, mask, values_m );
+	xcb_map_window( a_ctx->conn, resize_win->wid );
+
+	mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
+	values_m[0] = 0xFF0000;
+	values_m[1] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_BUTTON_RELEASE;
+	values_m[2] = a_ctx->pirate;
+
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, close_win->wid, frame_win->wid, wgeom->width - 19, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, mask, values_m );
+	xcb_map_window( a_ctx->conn, close_win->wid );
+
+	xcb_reparent_window( a_ctx->conn, client_win->wid, frame_win->wid, 0, 20 );
+	xcb_map_window( a_ctx->conn, client_win->wid );
+	xcb_map_window( a_ctx->conn, frame_win->wid );
 	
 	if (name) {
-	/*	error = xcb_request_check( a_ctx->conn, xcb_image_text_8_checked( a_ctx->conn, 4, decor->parent, gc, 30, 10, "plop" ) );
+	/*	error = xcb_request_check( a_ctx->conn, xcb_image_text_8_checked( a_ctx->conn, 4, frame_win->wid, gc, 30, 10, "plop" ) );
 		if (error) {
 			printf( "ImageText8 ERROR type %d, code %d\n", error->response_type, error->error_code );
 		}*/
@@ -227,7 +264,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 		polybuffer[1] = 0; // delta
 //		memcpy( &polybuffer[2], "plouf", 5 );
 		memcpy( &polybuffer[2], name16, 2*name_len );
-		error = xcb_request_check( a_ctx->conn, xcb_poly_text_16_checked( a_ctx->conn, decor->parent, gc, 45, 15, 2*name16_len+2 /*7*/, polybuffer ) );
+		error = xcb_request_check( a_ctx->conn, xcb_poly_text_16_checked( a_ctx->conn, frame_win->wid, gc, 45, 15, 2*name16_len+2 /*7*/, polybuffer ) );
 		if (error) {
 			printf( "PolyText8 ERROR type %d, code %d\n", error->response_type, error->error_code );
 		}
@@ -277,11 +314,14 @@ void create_cursors( struct aawm_ctx *a_ctx )
 	a_ctx->cursor_font = xcb_generate_id( a_ctx->conn );
 	xcb_open_font( a_ctx->conn, a_ctx->cursor_font, strlen( "cursor" ), "cursor" );
 
-	a_ctx->pirate = xcb_generate_id( a_ctx->conn );
-	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->pirate, a_ctx->cursor_font, a_ctx->cursor_font, 88, 89, 0,0,0,0,0,0 );
-
 	a_ctx->fleur = xcb_generate_id( a_ctx->conn );
-	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->fleur, a_ctx->cursor_font, a_ctx->cursor_font, 52, 53, 0,0,0,0,0,0 );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->fleur, a_ctx->cursor_font, a_ctx->cursor_font, 53, 52, 0,0,0,0,0,0 );
+
+	a_ctx->pirate = xcb_generate_id( a_ctx->conn );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->pirate, a_ctx->cursor_font, a_ctx->cursor_font, 89, 88, 0,0,0,0,0,0 );
+
+	a_ctx->sizing = xcb_generate_id( a_ctx->conn );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->sizing, a_ctx->cursor_font, a_ctx->cursor_font, 121, 120, 0,0,0,0,0,0 );
 
 	xcb_flush( a_ctx->conn );
 }
@@ -292,6 +332,13 @@ void events( struct aawm_ctx *a_ctx )
 	while (1) {
 		xcb_generic_event_t *ev = xcb_wait_for_event( a_ctx->conn );
 		switch (ev->response_type & ~0x80) {
+
+			case 0:
+			{
+				xcb_generic_error_t *e = (xcb_generic_error_t *) ev;
+				printf( "Received ERROR%s %d\n", (e->response_type & 0x80) ? " (S)" : "", e->error_code );
+			}
+			break;
 
 			// Substructure redirect mask
 
@@ -390,12 +437,24 @@ void events( struct aawm_ctx *a_ctx )
 			}
 			break;
 
+			// PropertyChangeMask
+
+			case XCB_PROPERTY_NOTIFY:
+			{
+				xcb_property_notify_event_t *e = (xcb_property_notify_event_t *) ev;
+				printf( "Received property notify%s for 0x%X, atom %d, state %d, at time %d\n", (e->response_type & 0x80) ? " (S)" : "", e->window, e->atom, e->state, e->time );
+			}
+			break;
+
 			// EnterWindowMask
 
 			case XCB_ENTER_NOTIFY:
 			{
 				xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *) ev;
 				printf( "Received enter notify%s for 0x%X (+%d+%d), child 0x%X, root 0x%X (+%d+%d) at time %d, detail %s, mode %d, same_screen_focus=0x%X, state=0x%X\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->event_x, e->event_y, e->child, e->root, e->root_x, e->root_y, e->time, get_detail_string( e->detail ), e->mode, e->same_screen_focus, e->state );
+				xcb_get_input_focus_reply_t *focus = xcb_get_input_focus_reply( a_ctx->conn, xcb_get_input_focus( a_ctx->conn ), NULL );
+				printf( "Focus currently on %d, revert to %d\n", focus->focus, focus->revert_to );
+				
 				if (e->detail != XCB_NOTIFY_DETAIL_INFERIOR) {
 					uint32_t mask = XCB_CW_BORDER_PIXEL;
 					uint32_t value = 0xFFFFFF;
@@ -430,13 +489,47 @@ void events( struct aawm_ctx *a_ctx )
 			{
 				xcb_button_press_event_t *e = (xcb_button_press_event_t *) ev;
 				printf( "Received button press%s from 0x%X (+%d+%d), with root 0x%X (+%d+%d) and child 0x%X, at time %d, button %d, state=%d, same_screen=%d\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->event_x, e->event_y, e->root, e->root_x, e->root_y, e->child, e->time, e->detail, e->state, e->same_screen );
+				aawm_window_t *win = map_lookup( a_ctx->windows_list, e->event );
+				if (win) {
+					switch (win->role) {
+					case AAWM_ROLE_CLIENT: printf( "Button press in client window\n" ); break;
+					case AAWM_ROLE_ROOT: printf( "Button press in root window\n" ); break;
+					case AAWM_ROLE_FRAME: printf( "Button press in frame window\n" ); break;
+					case AAWM_ROLE_CLOSE: printf( "Button press in close gadget\n" ); break;
+					case AAWM_ROLE_UTILITY: printf( "Button press in utility gadget\n" ); break;
+					case AAWM_ROLE_MINMAX: printf( "Button press in minmax gadget\n" ); break;
+					case AAWM_ROLE_RESIZE: printf( "Button press in resize gadget\n" ); break;
+					default: printf( "Button press in unknown type of window\n" );
+					}
+				} else {
+					printf( "Button press in unknown window\n" );
+					debug_map_list( a_ctx->windows_list );
+				}
 				if (e->detail == 1) {
 					a_ctx->motion_origin_x = e->root_x;
 					a_ctx->motion_origin_y = e->root_y;
-
-					xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, e->event ), NULL );
+					xcb_get_geometry_reply_t *wgeom;
+					if (win && win->role == AAWM_ROLE_RESIZE) {
+						aawm_window_t *frame_win = map_lookup( a_ctx->windows_list, win->parent );
+						if (frame_win && frame_win->role == AAWM_ROLE_FRAME) {
+							wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, win->parent ), NULL );
+						} else {
+							printf( "Couldn't find frame window, crash imminent\n" );
+						}
+					} else {
+						wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, e->event ), NULL );
+					}
 					a_ctx->window_origin_x = wgeom->x;
 					a_ctx->window_origin_y = wgeom->y;
+					a_ctx->window_origin_width = wgeom->width;
+					a_ctx->window_origin_height = wgeom->height;
+					// e->event_x and e->event_y are useless for resize because relative to the gadget, not the frame window
+					a_ctx->motion_rel_x = e->root_x - wgeom->x;
+					a_ctx->motion_rel_y = e->root_y - wgeom->y;
+					// Need to take border into account for these offsets
+					a_ctx->window_width_offset = wgeom->x + wgeom->width - e->root_x;
+					a_ctx->window_height_offset = wgeom->y + wgeom->height - e->root_y;
+					printf( "Relative coordinates: (%d,%d), to the bottom-right corner: (%d,%d)\n", a_ctx->motion_rel_x, a_ctx->motion_rel_y, a_ctx->window_width_offset, a_ctx->window_height_offset );
 				} else if (e->detail == 3) {
 					xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
 					xcb_pixmap_t circle_pix = xcb_generate_id( a_ctx->conn );
@@ -484,7 +577,10 @@ void events( struct aawm_ctx *a_ctx )
 
 				if (a_ctx->moving) {
 					a_ctx->moving = false;
-					// TODO: then unset pointer
+					// then unset pointer
+					uint32_t mask = XCB_CW_CURSOR;
+					uint32_t value = 0; // None
+					xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value ) );
 				}
 			}
 			break;
@@ -495,18 +591,60 @@ void events( struct aawm_ctx *a_ctx )
 			{
 				xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *) ev;
 				printf( "Received motion notify%s from 0x%X (+%d+%d), with root 0x%X (+%d+%d) and child 0x%X, at time %d, is_hint %d, state=%d, same_screen=%d\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->event_x, e->event_y, e->root, e->root_x, e->root_y, e->child, e->time, e->detail, e->state, e->same_screen );
-
-				if (!a_ctx->moving) {
-					a_ctx->moving = true;
-					// We need to retrieve decor before this can work...
-/*					uint32_t mask = XCB_CW_CURSOR;
-					uint32_t value = a_ctx->fleur;
-					xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, decor->close, mask, &value ) ); */
+				aawm_window_t *win = map_lookup( a_ctx->windows_list, e->event );
+				if (win) {
+					switch (win->role) {
+					case AAWM_ROLE_CLIENT: printf( "Motion in client window\n" ); break;
+					case AAWM_ROLE_ROOT: printf( "Motion in root window\n" ); break;
+					case AAWM_ROLE_FRAME: printf( "Motion in frame window\n" ); break;
+					case AAWM_ROLE_CLOSE: printf( "Motion in close gadget\n" ); break;
+					case AAWM_ROLE_UTILITY: printf( "Motion in utility gadget\n" ); break;
+					case AAWM_ROLE_MINMAX: printf( "Motion in minmax gadget\n" ); break;
+					case AAWM_ROLE_RESIZE: printf( "Motion in resize gadget\n" ); break;
+					default: printf( "Motion in unknown type of window\n" );
+					}
+				} else {
+					printf( "Motion in unknown window\n" );
+					debug_map_list( a_ctx->windows_list );
 				}
 
-				uint32_t values[] = { a_ctx->window_origin_x + e->root_x - a_ctx->motion_origin_x , a_ctx->window_origin_y + e->root_y - a_ctx->motion_origin_y };
-				xcb_configure_window( a_ctx->conn, e->event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values );
-				xcb_flush( a_ctx->conn );
+				if (win && win->role == AAWM_ROLE_FRAME) {
+					if (!a_ctx->moving) {
+						a_ctx->moving = true;
+						uint32_t mask = XCB_CW_CURSOR;
+						uint32_t value = a_ctx->fleur;
+						xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value ) );
+					}
+
+					uint32_t values[] = { a_ctx->window_origin_x + e->root_x - a_ctx->motion_origin_x , a_ctx->window_origin_y + e->root_y - a_ctx->motion_origin_y };
+					xcb_configure_window( a_ctx->conn, e->event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values );
+					xcb_flush( a_ctx->conn );
+				} else if (win && win->role == AAWM_ROLE_RESIZE) {
+					aawm_window_t *parent = map_lookup( a_ctx->windows_list, win->parent );
+					int i;
+					int found = 0;
+					aawm_window_t *temp, *close, *client;
+					for (i = 0; found != 2 && i < parent->children_count; i++) {
+						temp = map_lookup( a_ctx->windows_list, parent->children[i] );
+						if (temp->role == AAWM_ROLE_CLOSE) { close = temp; found++; }
+						if (temp->role == AAWM_ROLE_CLIENT) { client = temp; found++; }
+					}
+					if (found) {
+						printf( "Close found at index %d, ID 0x%X / 0x%X\n", i, parent->children[i], close->wid );
+					} else {
+						printf( "Close not found!\n" );
+					}
+					// wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30
+					uint32_t values1[] = { e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, e->root_y + a_ctx->window_height_offset - a_ctx->window_origin_y };
+					uint32_t values2[] = { e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19, e->root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 9 };
+					uint32_t value3 = e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19;
+					uint32_t values4[] = { e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, e->root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 30 };
+					xcb_configure_window( a_ctx->conn, win->parent, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values1 );
+					xcb_configure_window( a_ctx->conn, e->event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values2 );
+					xcb_configure_window( a_ctx->conn, close->wid, XCB_CONFIG_WINDOW_X, &value3 );
+					xcb_configure_window( a_ctx->conn, client->wid, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values4 );
+					xcb_flush( a_ctx->conn );
+				}
 			}
 			break;
 
@@ -610,9 +748,8 @@ void events( struct aawm_ctx *a_ctx )
 int main()
 {
 	struct aawm_ctx ctx;
-	ctx.managed_len = 0;
-	ctx.managed_win = NULL;
-
+	ctx.windows_list = map_create();
+	
 	int scrno = 0;
 	ctx.conn = xcb_connect( NULL, &scrno );
 
