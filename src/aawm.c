@@ -181,6 +181,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	uint32_t values[] = { 0x0FF, 0x0FF00 };
 	uint32_t values2[] = { 0xFF0000 };
+	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS|XCB_EVENT_MASK_BUTTON_RELEASE };
 	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
 
 	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL, values );
@@ -213,7 +214,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	}
 //	error = xcb_request_check( a_ctx->conn, xcb_poly_text_8_checked( a_ctx->conn, frame_win->wid, gc, 30, 10, 4, (const unsigned char *)"plop" ) );
 
-	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, util_win->wid, frame_win->wid, 0, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, util_win->wid, frame_win->wid, 0, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, values3 );
 	xcb_map_window( a_ctx->conn, util_win->wid );
 
 	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, minmax_win->wid, frame_win->wid, 20, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values2 );
@@ -259,11 +260,11 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 		}
 		printf( "\n" );
 //		unsigned char polybuffer[7];
-		unsigned char *polybuffer = malloc( 2*name16_len + 2 );
+		unsigned char *polybuffer = malloc( 2 * name16_len + 2 );
 		polybuffer[0] = name16_len; // 5; // len
 		polybuffer[1] = 0; // delta
 //		memcpy( &polybuffer[2], "plouf", 5 );
-		memcpy( &polybuffer[2], name16, 2*name_len );
+		memcpy( &polybuffer[2], name16, 2 * name16_len );
 		error = xcb_request_check( a_ctx->conn, xcb_poly_text_16_checked( a_ctx->conn, frame_win->wid, gc, 45, 15, 2*name16_len+2 /*7*/, polybuffer ) );
 		if (error) {
 			printf( "PolyText8 ERROR type %d, code %d\n", error->response_type, error->error_code );
@@ -506,30 +507,66 @@ void events( struct aawm_ctx *a_ctx )
 					debug_map_list( a_ctx->windows_list );
 				}
 				if (e->detail == 1) {
-					a_ctx->motion_origin_x = e->root_x;
-					a_ctx->motion_origin_y = e->root_y;
-					xcb_get_geometry_reply_t *wgeom;
-					if (win && win->role == AAWM_ROLE_RESIZE) {
-						aawm_window_t *frame_win = map_lookup( a_ctx->windows_list, win->parent );
-						if (frame_win && frame_win->role == AAWM_ROLE_FRAME) {
-							wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, win->parent ), NULL );
+					if (win && (win->role == AAWM_ROLE_RESIZE || win->role == AAWM_ROLE_FRAME)) {
+						a_ctx->motion_origin_x = e->root_x;
+						a_ctx->motion_origin_y = e->root_y;
+						xcb_get_geometry_reply_t *wgeom;
+						if (win && win->role == AAWM_ROLE_RESIZE) {
+							aawm_window_t *frame_win = map_lookup( a_ctx->windows_list, win->parent );
+							if (frame_win && frame_win->role == AAWM_ROLE_FRAME) {
+								wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, win->parent ), NULL );
+							} else {
+								printf( "Couldn't find frame window, crash imminent\n" );
+							}
 						} else {
-							printf( "Couldn't find frame window, crash imminent\n" );
+							wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, e->event ), NULL );
 						}
-					} else {
-						wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, e->event ), NULL );
+						a_ctx->window_origin_x = wgeom->x;
+						a_ctx->window_origin_y = wgeom->y;
+						a_ctx->window_origin_width = wgeom->width;
+						a_ctx->window_origin_height = wgeom->height;
+						// e->event_x and e->event_y are useless for resize because relative to the gadget, not the frame window
+						a_ctx->motion_rel_x = e->root_x - wgeom->x;
+						a_ctx->motion_rel_y = e->root_y - wgeom->y;
+						// Need to take border into account for these offsets
+						a_ctx->window_width_offset = wgeom->x + wgeom->width - e->root_x;
+						a_ctx->window_height_offset = wgeom->y + wgeom->height - e->root_y;
+						printf( "Relative coordinates: (%d,%d), to the bottom-right corner: (%d,%d)\n", a_ctx->motion_rel_x, a_ctx->motion_rel_y, a_ctx->window_width_offset, a_ctx->window_height_offset );
+					} else if (win && win->role == AAWM_ROLE_UTILITY) {
+						xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, e->event ), NULL );
+						aawm_window_t *win = map_lookup( a_ctx->windows_list, e->event );
+						xcb_get_geometry_reply_t *pgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, win->parent ), NULL );
+
+						xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
+						xcb_pixmap_t circle_pix = xcb_generate_id( a_ctx->conn );
+						xcb_window_t menu = xcb_generate_id( a_ctx->conn );
+						int pix_value = 0xffff00;
+						xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, menu, a_ctx->screen->root, (pgeom->x + wgeom->x + wgeom->width / 2) - 50, (pgeom->y + wgeom->y + wgeom->height / 2) - 50, 100, 100, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, &pix_value );
+						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_pixmap_checked( a_ctx->conn, 1, circle_pix, a_ctx->screen->root, 100, 100 ) );
+						if (error != NULL) {
+							printf( "CreatePixmap ERROR type %d, code %d\n", error->response_type, error->error_code );
+						}
+						error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, circle_pix /*a_ctx->screen->root*/, 0, NULL ) );
+						if (error != NULL) {
+							printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
+						}
+						int gc_value = 0;
+						xcb_change_gc( a_ctx->conn, gc, XCB_GC_FOREGROUND, &gc_value );
+						xcb_rectangle_t rect = { 0, 0, 100, 100 };
+						xcb_poly_fill_rectangle( a_ctx->conn, circle_pix, gc, 1, &rect );
+						gc_value = 1;
+						xcb_change_gc( a_ctx->conn, gc, XCB_GC_FOREGROUND, &gc_value );
+						xcb_arc_t arc = { 0, 0, 100, 100, 0, 360*64 };
+						xcb_poly_fill_arc( a_ctx->conn, circle_pix, gc, 1, &arc );
+						gc_value = 0;
+						xcb_change_gc( a_ctx->conn, gc, XCB_GC_FOREGROUND, &gc_value );
+						xcb_arc_t arc2 = { 40, 40, 20, 20, 0, 360*64 };
+						xcb_poly_fill_arc( a_ctx->conn, circle_pix, gc, 1, &arc2 );
+						
+						xcb_shape_mask( a_ctx->conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, menu, 0, 0, circle_pix );
+						xcb_map_window( a_ctx->conn, menu );
+						xcb_flush( a_ctx->conn );
 					}
-					a_ctx->window_origin_x = wgeom->x;
-					a_ctx->window_origin_y = wgeom->y;
-					a_ctx->window_origin_width = wgeom->width;
-					a_ctx->window_origin_height = wgeom->height;
-					// e->event_x and e->event_y are useless for resize because relative to the gadget, not the frame window
-					a_ctx->motion_rel_x = e->root_x - wgeom->x;
-					a_ctx->motion_rel_y = e->root_y - wgeom->y;
-					// Need to take border into account for these offsets
-					a_ctx->window_width_offset = wgeom->x + wgeom->width - e->root_x;
-					a_ctx->window_height_offset = wgeom->y + wgeom->height - e->root_y;
-					printf( "Relative coordinates: (%d,%d), to the bottom-right corner: (%d,%d)\n", a_ctx->motion_rel_x, a_ctx->motion_rel_y, a_ctx->window_width_offset, a_ctx->window_height_offset );
 				} else if (e->detail == 3) {
 					xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
 					xcb_pixmap_t circle_pix = xcb_generate_id( a_ctx->conn );
