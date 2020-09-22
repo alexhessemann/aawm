@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <xcb/xcb.h>
 
+#include "atoms.h"
 #include "map.h"
 
 struct aawm_ctx {
@@ -11,8 +12,11 @@ struct aawm_ctx {
 	xcb_screen_t *screen;
 	// X extensions
 	int shape_base;
+	// Atom names
+	map_t * atom_names;
+	xcb_atom_t atom_map[AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM];
 	// Windows
-	map_t *windows_list;
+	map_t * windows_list;
 	// Not wise to put this here
 	bool moving;
 	int motion_origin_x;

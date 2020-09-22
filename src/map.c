@@ -97,7 +97,7 @@ map_t * map_add( map_t *a_map, uint32_t a_key, void * a_value  )
 {
 	map_t * result = NULL;
 	uint32_t idx = map_lookup_index( a_map, a_key );
-	printf( "Adding 0x%X at %d\n", a_key, idx );
+//	printf( "Adding 0x%X at %d\n", a_key, idx );
 	if ( idx == a_map->entry_count || a_map->entries[idx].key != a_key) {
 		result = map_insert_at( a_map, idx, a_key, a_value );
 	}
@@ -142,7 +142,7 @@ void * map_lookup( map_t *a_map, uint32_t a_key )
 {
 	void * result = NULL;
 	uint32_t idx = map_lookup_index( a_map, a_key );
-	if (a_map->entries[idx].key == a_key) {
+	if (idx < a_map->entry_count && a_map->entries[idx].key == a_key) {
 		result = a_map->entries[idx].value;
 	}
 	return result;

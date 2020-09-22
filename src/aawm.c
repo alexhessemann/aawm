@@ -7,6 +7,7 @@
 
 #include "aawm_ctx.h"
 #include "aawm_window.h"
+#include "atoms.h"
 //#include "circle_menu.xbm"
 #include "get_constant_string.h"
 #include "utfconv.h"
@@ -59,6 +60,67 @@ void map_request_passthrough( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a
 	xcb_flush( a_ctx->conn );
 }
 
+
+void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_atom, const char * a_atom_name )
+{
+	int utf8_string = 0;
+	xcb_generic_error_t *error;
+	xcb_get_property_reply_t *prop_reply = xcb_get_property_reply( a_ctx->conn, xcb_get_property( a_ctx->conn, false, a_window, a_atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 40 ), &error );
+	if (error != NULL) {
+		printf( "GetProperty ERROR type %d, code %d\n", error->response_type, error->error_code );
+		return;
+	}
+	const char * type_name = get_atom_name( a_ctx, prop_reply->type );
+	if (!strcmp( type_name, "UTF8_STRING" )) {
+		utf8_string = prop_reply->type;
+	} 
+
+	printf( "\t%d %s type %s value length %d - %d, bytes after %d", a_atom, a_atom_name, type_name, xcb_get_property_value_length( prop_reply), prop_reply->value_len, prop_reply->bytes_after );
+
+	switch (prop_reply->type) {
+		case XCB_ATOM_STRING:
+//		case XCB_ATOM_UTF8_STRING:
+			printf( " value \"%.*s\"", prop_reply->value_len, (char*)xcb_get_property_value( prop_reply ) );
+			break;
+		case XCB_ATOM_WINDOW:
+			{
+				xcb_window_t* win = (xcb_window_t*) xcb_get_property_value( prop_reply );
+				printf( " 0x%X", *win );
+			}
+			break;
+		case XCB_ATOM_ATOM:
+			{
+				int j;
+				xcb_atom_t* atoms = (xcb_atom_t*) xcb_get_property_value( prop_reply );
+				const char ** name_list = alloc_atom_names_list( a_ctx, prop_reply->value_len, atoms );
+				for (j=0; j< prop_reply->value_len; j++) {
+//					const char *name = get_atom_name( a_ctx, atoms[j] );
+					printf( " %d %s", atoms[j], name_list[j] );
+				}
+				free( name_list );
+			}
+			break;
+		case XCB_ATOM_WM_HINTS:
+			{
+				xcb_icccm_wm_hints_t* hints = (xcb_icccm_wm_hints_t*) xcb_get_property_value( prop_reply );
+				printf( " flags 0x%X input %d initial state %d icon pixmap 0x%X icon window 0x%X icon position [%d,%d] icon mask 0x%X, window group 0x%X", hints->flags, hints->input, hints->initial_state, hints->icon_pixmap, hints->icon_window, hints->icon_x, hints->icon_y, hints->icon_mask, hints->window_group );
+			}
+			break;
+		case XCB_ATOM_WM_SIZE_HINTS:
+			{
+				xcb_size_hints_t* hints = (xcb_size_hints_t*) xcb_get_property_value( prop_reply );
+				printf( " flags 0x%X geom [%d,%d,%d,%d+%d]x[%d,%d,%d,%d+%d]+%d+%d aspect ratio [%d/%d, %d/%d] gravity %d", hints->flags, hints->min_width, hints->base_width, hints->width, hints->max_width, hints->width_inc, hints->min_height, hints->base_height, hints->height, hints->max_height, hints->height_inc, hints->x, hints->y, hints->min_aspect_num, hints->min_aspect_den, hints->max_aspect_num, hints->max_aspect_den, hints->win_gravity );
+			}
+			break;
+		default:
+			if (utf8_string != 0 && prop_reply->type == utf8_string) {
+				printf( " value \"%.*s\"", prop_reply->value_len, (char*)xcb_get_property_value( prop_reply ) );
+			}
+	}
+	printf( "\n" );
+}
+
+
 void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev )
 {
 	char *name = NULL;
@@ -97,30 +159,30 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	int prop_count =  xcb_list_properties_atoms_length( props );
 	printf( "Window 0x%X defines %d properties:\n", a_ev->window, prop_count );
 	xcb_atom_t *prop_atoms = xcb_list_properties_atoms( props );
+//	const char ** atom_names_list = alloc_atom_names_list( a_ctx, prop_count, prop_atoms );
 	int i;
 	for (i = 0; i < prop_count; i++) {
-		xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_ctx->conn, xcb_get_atom_name( a_ctx->conn, prop_atoms[i]), NULL );
-		char *aname = xcb_get_atom_name_name( reply );
-		int aname_len = xcb_get_atom_name_name_length( reply );
-		char *namez = malloc( aname_len + 1 );
-		namez[aname_len] = 0;
-		memcpy( namez, aname, aname_len );
+		const char * atom_name = get_atom_name( a_ctx, prop_atoms[i] );
 		xcb_get_property_reply_t *prop_reply = xcb_get_property_reply( a_ctx->conn, xcb_get_property( a_ctx->conn, false, a_ev->window, prop_atoms[i], XCB_GET_PROPERTY_TYPE_ANY, 0, 40 ), NULL );
-		xcb_get_atom_name_reply_t *type_reply = xcb_get_atom_name_reply( a_ctx->conn, xcb_get_atom_name( a_ctx->conn, prop_reply->type), NULL );
-		char *type_name = xcb_get_atom_name_name( type_reply );
-		int type_name_len = xcb_get_atom_name_name_length( type_reply );
-		char *type_namez = malloc( type_name_len + 1 );
-		type_namez[type_name_len] = 0;
-		memcpy( type_namez, type_name, type_name_len );
-		if (!strcmp( type_namez, "UTF8_STRING" )) {
+		const char * type_name = get_atom_name( a_ctx, prop_reply->type );
+		if (!strcmp( type_name, "UTF8_STRING" )) {
 			utf8_string = prop_reply->type;
 		} 
 		
-		printf( "\t%d %s type %s value length %d - %d", prop_atoms[i], namez, type_namez, xcb_get_property_value_length( prop_reply), prop_reply->value_len );
+		printf( "\t%d %s type %s value length %d - %d, bytes after %d", prop_atoms[i], atom_name, type_name, xcb_get_property_value_length( prop_reply ), prop_reply->value_len, prop_reply->bytes_after );
 		switch (prop_reply->type) {
 			case XCB_ATOM_STRING:
 //			case XCB_ATOM_UTF8_STRING:
 				printf( " value \"%.*s\"", prop_reply->value_len, (char*)xcb_get_property_value( prop_reply ) );
+				break;
+			case XCB_ATOM_CARDINAL:
+				{
+					int i;
+					uint32_t * values = (uint32_t *) xcb_get_property_value( prop_reply );
+					for (i = 0; i < (prop_reply->value_len < 10 ? prop_reply->value_len : 10); i++ ) {
+						printf( " %d (0x%X)", values[i], values[i] );
+					}
+				}
 				break;
 			case XCB_ATOM_WINDOW:
 				{
@@ -132,18 +194,33 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 				{
 					int j;
 					xcb_atom_t* atoms = (xcb_atom_t*) xcb_get_property_value( prop_reply );
+					const char ** name_list = alloc_atom_names_list( a_ctx, prop_reply->value_len, atoms );
 					for (j=0; j< prop_reply->value_len; j++) {
-						xcb_get_atom_name_reply_t *atom_reply = xcb_get_atom_name_reply( a_ctx->conn, xcb_get_atom_name( a_ctx->conn, atoms[j]), NULL );
-						char *name = xcb_get_atom_name_name( atom_reply );
-						int name_len = xcb_get_atom_name_name_length( atom_reply );
-						printf( " %d %.*s", atoms[j], name_len, name );
+//						const char *name = get_atom_name( a_ctx, atoms[j] );
+						printf( " %d %s", atoms[j], name_list[j] );
 					}
+					free( name_list );
 				}
 				break;
 			case XCB_ATOM_WM_HINTS:
 				{
 					xcb_icccm_wm_hints_t* hints = (xcb_icccm_wm_hints_t*) xcb_get_property_value( prop_reply );
 					printf( " flags 0x%X input %d initial state %d icon pixmap 0x%X icon window 0x%X icon position [%d,%d] icon mask 0x%X, window group 0x%X", hints->flags, hints->input, hints->initial_state, hints->icon_pixmap, hints->icon_window, hints->icon_x, hints->icon_y, hints->icon_mask, hints->window_group );
+
+					if (hints->icon_pixmap) {
+						xcb_get_geometry_reply_t *icongeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, hints->icon_pixmap ), NULL );
+						printf( " - icon pixmap: %dx%d+%d+%d, depth %d, border %d, root 0x%X", icongeom->width, icongeom->height, icongeom->x, icongeom->y, icongeom->depth, icongeom->border_width, icongeom->root );
+
+						xid = xcb_generate_id( a_ctx->conn );
+						xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, xid, a_ctx->screen->root, icongeom->x, 800, icongeom->width, icongeom->height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, 0, NULL );
+						xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
+						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, xid, 0, NULL ) );
+						if (error != NULL) {
+							printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
+						}
+						xcb_map_window( a_ctx->conn, xid );
+						xcb_copy_area( a_ctx->conn, hints->icon_pixmap, xid, gc, 0, 0, 0, 0, icongeom->width, icongeom->height );
+					}	
 				}
 				break;
 			case XCB_ATOM_WM_SIZE_HINTS:
@@ -155,7 +232,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 			default:
 				if (utf8_string != 0 && prop_reply->type == utf8_string) {
 					printf( " value \"%.*s\"", prop_reply->value_len, (char*)xcb_get_property_value( prop_reply ) );
-					if (!strcmp( namez, "_NET_WM_NAME" )) {
+					if (!strcmp( atom_name, "_NET_WM_NAME" )) {
 						printf( " - setting _NET_WM_NAME\n" );
 						name = (char*)xcb_get_property_value( prop_reply );
 						name_len = prop_reply->value_len;
@@ -181,7 +258,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	uint32_t values[] = { 0x0FF, 0x0FF00 };
 	uint32_t values2[] = { 0xFF0000 };
-	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS|XCB_EVENT_MASK_BUTTON_RELEASE };
+	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE };
 	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
 
 	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL, values );
@@ -222,7 +299,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
 	values_m[0] = 0xFF0000;
-	values_m[1] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_BUTTON_PRESS | XCB_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_1_MOTION;
+	values_m[1] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_1_MOTION;
 	values_m[2] = a_ctx->sizing;
 
 	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, resize_win->wid, frame_win->wid, wgeom->width - 19, wgeom->height + 21, 19, 9, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, mask, values_m );
@@ -230,7 +307,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
 	values_m[0] = 0xFF0000;
-	values_m[1] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_BUTTON_RELEASE;
+	values_m[1] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE;
 	values_m[2] = a_ctx->pirate;
 
 	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, close_win->wid, frame_win->wid, wgeom->width - 19, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, mask, values_m );
@@ -443,7 +520,9 @@ void events( struct aawm_ctx *a_ctx )
 			case XCB_PROPERTY_NOTIFY:
 			{
 				xcb_property_notify_event_t *e = (xcb_property_notify_event_t *) ev;
-				printf( "Received property notify%s for 0x%X, atom %d, state %d, at time %d\n", (e->response_type & 0x80) ? " (S)" : "", e->window, e->atom, e->state, e->time );
+				const char *atom_name = get_atom_name( a_ctx, e->atom );
+				printf( "Received property notify%s for 0x%X, atom %d (%s), state %d, at time %d\n", (e->response_type & 0x80) ? " (S)" : "", e->window, e->atom, atom_name, e->state, e->time );
+				read_property( a_ctx, e->window, e->atom, atom_name );
 			}
 			break;
 
@@ -613,11 +692,36 @@ void events( struct aawm_ctx *a_ctx )
 				printf( "Received button release%s from 0x%X (+%d+%d), with root 0x%X (+%d+%d) and child 0x%X, at time %d, button %d, state=%d, same_screen=%d\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->event_x, e->event_y, e->root, e->root_x, e->root_y, e->child, e->time, e->detail, e->state, e->same_screen );
 
 				if (a_ctx->moving) {
+					printf( "We were moving\n" );
 					a_ctx->moving = false;
 					// then unset pointer
 					uint32_t mask = XCB_CW_CURSOR;
 					uint32_t value = 0; // None
 					xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value ) );
+				} else {
+					aawm_window_t *win = map_lookup( a_ctx->windows_list, e->event );
+					aawm_window_t *frame = map_lookup( a_ctx->windows_list, win->parent );
+					aawm_window_t *client;
+					int i;
+					bool found = false;
+					for (i = 0; !found && i < frame->children_count; i++ ) {
+						client = map_lookup( a_ctx->windows_list, frame->children[i] );
+						if (client->role == AAWM_ROLE_CLIENT) found = true;
+					}
+
+					if (win && win->role == AAWM_ROLE_CLOSE) {
+						printf( "Received close request\n" );
+						xcb_client_message_event_t * msg = calloc( 32, 1 );
+						msg->response_type = XCB_CLIENT_MESSAGE;
+						msg->format = 32;
+						msg->window = client->wid;
+						msg->type = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_PROTOCOLS );
+						msg->data.data32[0] = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_DELETE_WINDOW );
+						msg->data.data32[1] = XCB_CURRENT_TIME;
+						xcb_send_event( a_ctx->conn, 0, client->wid, 0, (char*)msg );
+						free( msg );
+						xcb_flush( a_ctx->conn );
+					}
 				}
 			}
 			break;
@@ -690,25 +794,16 @@ void events( struct aawm_ctx *a_ctx )
 			case XCB_CLIENT_MESSAGE:
 			{
 				xcb_client_message_event_t *e = (xcb_client_message_event_t *) ev;
-				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_ctx->conn, e->type );
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *name = xcb_get_atom_name_name( reply );
+
+				const char *name = get_atom_name( a_ctx, e->type );
+
+				// if atom == _NET_WM_STATE
 				printf( "Received client message%s from 0x%X, atom %s format %d\n", (e->response_type & 0x80) ? " (S)" : "", e->window, name, e->format );
 
 				const char* action = e->data.data32[0] == 0 ? "_NET_WM_STATE_REMOVE" :  e->data.data32[0] == 1 ? "_NET_WM_STATE_ADD" : e->data.data32[0] == 2 ? "_NET_WM_STATE_TOGGLE" : "<unknown>";
 
-				cookie = xcb_get_atom_name( a_ctx->conn, e->data.data32[1] );
-				reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *prop1 = name = xcb_get_atom_name_name( reply );
-
-				char *prop2;
-				if (e->data.data32[2]) {
-					xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_ctx->conn, e->data.data32[2] );
-					xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-					prop2 = name = xcb_get_atom_name_name( reply );
-				} else {
-					prop2 = "(none)";
-				}
+				const char * prop1 = get_atom_name( a_ctx, e->data.data32[1] );
+				const char * prop2 = get_atom_name( a_ctx, e->data.data32[2] ); // 0 would mean NONE rather than ANY
 
 				const char* source = e->data.data32[3] == 0 ? "unspecified" :  e->data.data32[3] == 1 ? "application" : e->data.data32[3] == 2 ? "direct user action" : "<unknown>";
 
@@ -731,9 +826,7 @@ void events( struct aawm_ctx *a_ctx )
 			case XCB_SELECTION_CLEAR:
 			{
 				xcb_selection_clear_event_t* e = (xcb_selection_clear_event_t*) ev;
-				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_ctx->conn, e->selection );
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *name = xcb_get_atom_name_name( reply );
+				const char *name = get_atom_name( a_ctx, e->selection );
 				printf( "Received selection clear%s from 0x%X, at time %d, atom %s\n", (e->response_type & 0x80) ? " (S)" : "", e->owner, e->time, name );
 			}
 			break;
@@ -741,32 +834,26 @@ void events( struct aawm_ctx *a_ctx )
 			case XCB_SELECTION_NOTIFY:
 			{
 				xcb_selection_notify_event_t* e = (xcb_selection_notify_event_t *) ev;
-				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_ctx->conn, e->selection );
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *selection_name = xcb_get_atom_name_name( reply );
-				cookie = xcb_get_atom_name( a_ctx->conn, e->target );
-				reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *type_name = xcb_get_atom_name_name( reply );
-				cookie = xcb_get_atom_name( a_ctx->conn, e->property );
-				reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *prop_name = xcb_get_atom_name_name( reply );
-				printf( "Received selection notify%s from 0x%X, at time %d, selection %s, target type %s, in property %s\n", (e->response_type & 0x80) ? " (S)" : "", e->requestor, e->time, selection_name, type_name, prop_name );
+
+				xcb_atom_t atom_list[] = { e->selection, e->target, e->property };
+				const char ** name_list = alloc_atom_names_list( a_ctx, 3, atom_list );
+
+				printf( "Received selection notify%s from 0x%X, at time %d, selection %s, target type %s, in property %s\n", (e->response_type & 0x80) ? " (S)" : "", e->requestor, e->time, name_list[0], name_list[1], name_list[2] );
+
+				free( name_list );
 			}
 			break;
 
 			case XCB_SELECTION_REQUEST:
 			{
 				xcb_selection_request_event_t* e = (xcb_selection_request_event_t *) ev;
-				xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name( a_ctx->conn, e->selection );
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *selection_name = xcb_get_atom_name_name( reply );
-				cookie = xcb_get_atom_name( a_ctx->conn, e->target );
-				reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *type_name = xcb_get_atom_name_name( reply );
-				cookie = xcb_get_atom_name( a_ctx->conn, e->property );
-				reply = xcb_get_atom_name_reply( a_ctx->conn, cookie, NULL );
-				char *prop_name = xcb_get_atom_name_name( reply );
-				printf( "Received selection request%s from 0x%X for 0x%X, at time %d, selection %s, target type %s, in property %s\n", (e->response_type & 0x80) ? " (S)" : "", e->requestor, e->owner, e->time, selection_name, type_name, prop_name );
+
+				xcb_atom_t atom_list[] = { e->selection, e->target, e->property };
+				const char ** name_list = alloc_atom_names_list( a_ctx, 3, atom_list );
+
+				printf( "Received selection request%s from 0x%X for 0x%X, at time %d, selection %s, target type %s, in property %s\n", (e->response_type & 0x80) ? " (S)" : "", e->requestor, e->owner, e->time, name_list[0], name_list[1], name_list[2] );
+
+				free( name_list );
 			}
 			break;
 
@@ -786,6 +873,8 @@ int main()
 {
 	struct aawm_ctx ctx;
 	ctx.windows_list = map_create();
+	ctx.atom_names = map_create();
+	memset( ctx.atom_map, 0, (AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM) * sizeof(xcb_atom_t ) );
 	
 	int scrno = 0;
 	ctx.conn = xcb_connect( NULL, &scrno );
