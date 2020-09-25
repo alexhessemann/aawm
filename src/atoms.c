@@ -11,7 +11,7 @@
 // (package libxcb-util0-dev in Debian)
 
 static const char * atom_string[] = {
-	"NONE/ANY",
+	"NONE/ANY", // 0
 	"PRIMARY",
 	"SECONDARY",
 	"ARC",
@@ -21,7 +21,7 @@ static const char * atom_string[] = {
 	"COLORMAP",
 	"CURSOR",
 	"CUT_BUFFER0",
-	"CUT_BUFFER1",
+	"CUT_BUFFER1", // 10
 	"CUT_BUFFER2",
 	"CUT_BUFFER3",
 	"CUT_BUFFER4",
@@ -31,7 +31,7 @@ static const char * atom_string[] = {
 	"DRAWABLE",
 	"FONT",
 	"INTEGER",
-	"PIXMAP",
+	"PIXMAP", // 20
 	"POINT",
 	"RECTANGLE",
 	"RESOURCE_MANAGER",
@@ -41,7 +41,7 @@ static const char * atom_string[] = {
 	"RGB_DEFAULT_MAP",
 	"RGB_GRAY_MAP",
 	"RGB_GREEN_MAP",
-	"RGB_RED_MAP",
+	"RGB_RED_MAP", // 30
 	"STRING",
 	"VISUALID",
 	"WINDOW",
@@ -51,10 +51,9 @@ static const char * atom_string[] = {
 	"WM_ICON_NAME",
 	"WM_ICON_SIZE",
 	"WM_NAME",
-	"WM_NORMAL_HINTS",
+	"WM_NORMAL_HINTS", // 40
 	"WM_SIZE_HINTS",
 	"WM_ZOOM_HINTS",
-	// BEGIN Built-in font property names
 	"MIN_SPACE",
 	"NORM_SPACE",
 	"MAX_SPACE",
@@ -62,7 +61,7 @@ static const char * atom_string[] = {
 	"SUPERSCRIPT_X",
 	"SUPERSCRIPT_Y",
 	"SUBSCRIPT_X",
-	"SUBSCRIPT_Y",
+	"SUBSCRIPT_Y", // 50
 	"UNDERLINE_POSITION",
 	"UNDERLINE_THICKNESS",
 	"STRIKEOUT_ASCENT",
@@ -72,24 +71,93 @@ static const char * atom_string[] = {
 	"QUAD_WIDTH",
 	"WEIGHT",
 	"POINT_SIZE",
-	"RESOLUTION",
+	"RESOLUTION", // 60
 	"COPYRIGHT",
 	"NOTICE",
 	"FONT_NAME",
 	"FAMILY_NAME",
 	"FULL_NAME",
 	"CAP_HEIGHT",
-	// END Built-in font property names
 	"WM_CLASS",
-	"WM_TRANSIENT_FOR",
+	"WM_TRANSIENT_FOR", // 68
 
 	// Following strings aren't pre-defined and need to be mapped
 
-	"UTF8_STRING",
 	"WM_PROTOCOLS",
-	"WM_TAKE_FOCUS",
+	"WM_TAKE_FOCUS", // 70
 	"WM_SAVE_YOURSELF",
-	"WM_DELETE_WINDOW"
+	"WM_DELETE_WINDOW",
+	"WM_CLIENT_LEADER",
+	"WM_WINDOW_ROLE",
+	"UTF8_STRING",
+	"_NET_SUPPORTED",
+	"_NET_CLIENT_LIST",
+	"_NET_CLIENT_LIST_STACKING", // +10
+	"_NET_NUMBER_OF_DESKTOPS",
+	"_NET_DESKTOP_GEOMETRY", // 80
+	"_NET_DESKTOP_VIEWPORT",
+	"_NET_CURRENT_DESKTOP",
+	"_NET_DESKTOP_NAMES",
+	"_NET_ACTIVE_WINDOW",
+	"_NET_WORKAREA",
+	"_NET_SUPPORTING_WM_CHECK",
+	"_NET_VIRTUAL_ROOTS",
+	"_NET_DESKTOP_LAYOUT", // +20
+	"_NET_SHOWING_DESKTOP",
+	"_NET_CLOSE_WINDOW", // 90
+	"_NET_MOVERESIZE_WINDOW",
+	"_NET_WM_MOVERESIZE",
+	"_NET_RESTACK_WINDOW",
+	"_NET_REQUEST_FRAME_EXTENTS",
+	"_NET_WM_NAME",
+	"_NET_WM_VISIBLE_NAME",
+	"_NET_WM_ICON_NAME",
+	"_NET_WM_VISIBLE_ICON_NAME", // +30
+	"_NET_WM_DESKTOP",
+	"_NET_WM_WINDOW_TYPE", // 100
+	"_NET_WM_WINDOW_TYPE_DESKTOP",
+	"_NET_WM_WINDOW_TYPE_DOCK",
+	"_NET_WM_WINDOW_TYPE_TOOLBAR",
+	"_NET_WM_WINDOW_TYPE_MENU",
+	"_NET_WM_WINDOW_TYPE_UTILITY",
+	"_NET_WM_WINDOW_TYPE_SPLASH",
+	"_NET_WM_WINDOW_TYPE_DIALOG",
+	"_NET_WM_WINDOW_TYPE_NORMAL", // +40
+	"_NET_WM_STATE",
+	"_NET_WM_STATE_MODAL", // 110
+	"_NET_WM_STATE_STICKY",
+	"_NET_WM_STATE_MAXIMIZED_VERT",
+	"_NET_WM_STATE_MAXIMIZED_HORZ",
+	"_NET_WM_STATE_SHADED",
+	"_NET_WM_STATE_SKIP_TASKBAR",
+	"_NET_WM_STATE_SKIP_PAGER",
+	"_NET_WM_STATE_HIDDEN",
+	"_NET_WM_STATE_FULLSCREEN", // +50
+	"_NET_WM_STATE_ABOVE",
+	"_NET_WM_STATE_BELOW", // 120
+	"_NET_WM_STATE_DEMANDS_ATTENTION",
+	"_NET_WM_ALLOWED_ACTIONS",
+	"_NET_WM_ACTION_MOVE",
+	"_NET_WM_ACTION_RESIZE",
+	"_NET_WM_ACTION_MINIMIZE",
+	"_NET_WM_ACTION_SHADE",
+	"_NET_WM_ACTION_STICK",
+	"_NET_WM_ACTION_MAXIMIZE_HORZ", // +60
+	"_NET_WM_ACTION_MAXIMIZE_VERT",
+	"_NET_WM_ACTION_FULLSCREEN", // 130
+	"_NET_WM_ACTION_CHANGE_DESKTOP",
+	"_NET_WM_ACTION_CLOSE",
+	"_NET_WM_STRUT",
+	"_NET_WM_STRUT_PARTIAL",
+	"_NET_WM_ICON_GEOMETRY",
+	"_NET_WM_ICON",
+	"_NET_WM_PID",
+	"_NET_WM_HANDLED_ICONS", // +70
+	"_NET_WM_USER_TIME",
+	"_NET_FRAME_EXTENTS", // 140
+	"_NET_WM_PING",
+	"_NET_WM_SYNC_REQUEST",
+	"_NET_WM_SYNC_REQUEST_COUNTER" // 143, +75
 };
 
 struct request {
@@ -179,7 +247,7 @@ const char ** alloc_atom_names_list( struct aawm_ctx * a_ctx, size_t a_len, xcb_
 }
 
 
-xcb_atom_t get_atom_from_symbol( struct aawm_ctx * a_ctx, int a_symbol )
+xcb_atom_t get_atom_from_symbol( struct aawm_ctx * a_ctx, aawm_atom_enum_t a_symbol )
 {
 	xcb_atom_t result;
 	if (a_symbol <= AAWM_LAST_X11_PREDEFINED_ATOM) {
@@ -193,6 +261,35 @@ xcb_atom_t get_atom_from_symbol( struct aawm_ctx * a_ctx, int a_symbol )
 		result = reply->atom;
 	}
 
+	return result;
+}
+
+
+aawm_atom_enum_t get_symbol_from_atom( struct aawm_ctx * a_ctx, xcb_atom_t a_atom )
+{
+	aawm_atom_enum_t result = AAWM_ATOM_UNKNOWN;
+
+	if (a_atom < AAWM_LAST_X11_PREDEFINED_ATOM) {
+		result = a_atom;
+	} else {
+		int i;
+		for (i = 0; result == AAWM_ATOM_UNKNOWN && i < (AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM); i++) {
+			if (a_ctx->atom_map[i] == a_atom) {
+				result = i + AAWM_LAST_X11_PREDEFINED_ATOM + 1;
+			}
+		}
+		if (result == AAWM_ATOM_UNKNOWN) {
+			const char *atom_name = get_atom_name( a_ctx, a_atom );
+			for (i = 0; result == AAWM_ATOM_UNKNOWN && i < (AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM); i++) {
+				if (a_ctx->atom_map[i] == 0) {
+					if (!strcmp( atom_name, atom_string[i + AAWM_LAST_X11_PREDEFINED_ATOM + 1] )) {
+						a_ctx->atom_map[i] = a_atom;
+						result = i + AAWM_LAST_X11_PREDEFINED_ATOM + 1;
+					}
+				}
+			}
+		}
+	}
 	return result;
 }
 
