@@ -392,14 +392,14 @@ void events( struct aawm_ctx *a_ctx )
 			}
 			break;
 
+			// (Sub)Structure notify mask
+
 			case XCB_CIRCULATE_REQUEST:
 			{
 				xcb_circulate_request_event_t *e = (xcb_circulate_request_event_t *)ev;
 				printf("Received circulate request%s from 0x%X for 0x%X, ignoring\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->window );
 			}
 			break;
-
-			// (Sub)Structure notify mask
 
 			case XCB_CONFIGURE_NOTIFY:
 			{
@@ -419,8 +419,22 @@ void events( struct aawm_ctx *a_ctx )
 			{
 				xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *)ev;
 				printf( "Received destroy notify%s from 0x%X for 0x%X\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->window );
+				aawm_window_t *win = map_lookup( a_ctx->windows_list, e->window );
+				if (!win) {
+					printf( "Destroyed window (0x%X) not registered ?!\n", e->window ); 
+				} else {
+					if (win->parent != e->event) {
+						printf( "Catched by root instead of frame ?!\n" );
+					}
+					printf( "Destroying window 0x%X\n", win->parent );
+					xcb_destroy_window( a_ctx->conn, win->parent );
+					// TODO: Delete in windows_list, too.
+					xcb_flush( a_ctx->conn );
+				}
 			}
 			break;
+
+			// TODO: Gravity
 
 			case XCB_MAP_NOTIFY:
 			{
@@ -665,14 +679,14 @@ void events( struct aawm_ctx *a_ctx )
 					}
 
 					if (win && win->role == AAWM_ROLE_CLOSE) {
-						printf( "Received close request\n" );
+						printf( "Received close request, sending to 0x%X\n", client->wid );
 						xcb_client_message_event_t * msg = calloc( 32, 1 );
 						msg->response_type = XCB_CLIENT_MESSAGE;
 						msg->format = 32;
 						msg->window = client->wid;
 						msg->type = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_PROTOCOLS );
 						msg->data.data32[0] = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_DELETE_WINDOW );
-						msg->data.data32[1] = XCB_CURRENT_TIME;
+						msg->data.data32[1] = e->time; // XCB_CURRENT_TIME;
 						xcb_send_event( a_ctx->conn, 0, client->wid, 0, (char*)msg );
 						free( msg );
 						xcb_flush( a_ctx->conn );
@@ -744,6 +758,15 @@ void events( struct aawm_ctx *a_ctx )
 			}
 			break;
 
+			// GCGraphicsExposure
+
+			case XCB_NO_EXPOSURE:
+			{
+				xcb_no_exposure_event_t *e = (xcb_no_exposure_event_t *) ev;
+				printf( "Received no exposure%s for drawable 0x%X, opcode %d.%d\n", (e->response_type & 0x80) ? " (S)" : "", e->drawable, e->major_opcode, e->minor_opcode );
+			}
+			break;
+
 			// Other: These have no corresponding masks, so we receive them in any case.
 
 			case XCB_CLIENT_MESSAGE:
@@ -751,19 +774,18 @@ void events( struct aawm_ctx *a_ctx )
 				xcb_client_message_event_t *e = (xcb_client_message_event_t *) ev;
 
 				const char *name = get_atom_name( a_ctx, e->type );
-
-				// if atom == _NET_WM_STATE
 				printf( "Received client message%s from 0x%X, atom %s format %d\n", (e->response_type & 0x80) ? " (S)" : "", e->window, name, e->format );
 
-				const char* action = e->data.data32[0] == 0 ? "_NET_WM_STATE_REMOVE" :  e->data.data32[0] == 1 ? "_NET_WM_STATE_ADD" : e->data.data32[0] == 2 ? "_NET_WM_STATE_TOGGLE" : "<unknown>";
+				if (e->type == AAWM_ATOM_NET_WM_STATE) {
+					const char* action = e->data.data32[0] == 0 ? "_NET_WM_STATE_REMOVE" :  e->data.data32[0] == 1 ? "_NET_WM_STATE_ADD" : e->data.data32[0] == 2 ? "_NET_WM_STATE_TOGGLE" : "<unknown>";
 
-				const char * prop1 = get_atom_name( a_ctx, e->data.data32[1] );
-				const char * prop2 = get_atom_name( a_ctx, e->data.data32[2] ); // 0 would mean NONE rather than ANY
+					const char * prop1 = get_atom_name( a_ctx, e->data.data32[1] );
+					const char * prop2 = get_atom_name( a_ctx, e->data.data32[2] ); // 0 would mean NONE rather than ANY
 
-				const char* source = e->data.data32[3] == 0 ? "unspecified" :  e->data.data32[3] == 1 ? "application" : e->data.data32[3] == 2 ? "direct user action" : "<unknown>";
+					const char* source = e->data.data32[3] == 0 ? "unspecified" :  e->data.data32[3] == 1 ? "application" : e->data.data32[3] == 2 ? "direct user action" : "<unknown>";
 
-				printf( "\taction: %s, property 1: %s, property 2: %s, source: %s\n", action, prop1, prop2, source );
-
+					printf( "\taction: %s, property 1: %s, property 2: %s, source: %s\n", action, prop1, prop2, source );
+				}
 			}
 			break;
 

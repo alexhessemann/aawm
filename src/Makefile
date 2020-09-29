@@ -1,6 +1,6 @@
 LDLIBS=-lxcb -lxcb-shape
 
-CFLAGS=-Wall
+CFLAGS=-g -Wall
 
 .PHONY: clean
 

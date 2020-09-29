@@ -38,7 +38,7 @@ ssize_t utf32_to_utf16( uint32_t utf32, uint16_t* utf16 )
 	Returns the number of bytes written.
 		TODO: Fail on invalid codepoints (those reserved for surrogates, and > U+10FFFF
  */
-size_t utf32_to_utf8(unsigned int utf32, unsigned char* utf8)
+ssize_t utf32_to_utf8(unsigned int utf32, unsigned char* utf8)
 {
 	if (! (utf32 & 0xFFFFFF80) ) {
 		*utf8 = utf32;
@@ -78,7 +78,7 @@ size_t utf32_to_utf8(unsigned int utf32, unsigned char* utf8)
 		-1 if a_utf16 is a low surrogate (and a_utf32 did not contain a high surrogate)
 	NOTA: Valid UCS-2 strings always return 1.
 */
-size_t utf16_to_utf32(unsigned short a_utf16, unsigned int* a_utf32)
+ssize_t utf16_to_utf32(unsigned short a_utf16, unsigned int* a_utf32)
 {
 	if (a_utf16 >= 0xD800 && a_utf16 <= 0xDBFF) {
 		*a_utf32 = a_utf16;
