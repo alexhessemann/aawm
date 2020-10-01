@@ -344,17 +344,21 @@ void resize_request_passthrough( xcb_connection_t* a_conn, xcb_resize_request_ev
 
 void create_cursors( struct aawm_ctx *a_ctx )
 {
+	static const char font_name[] = "cursor";
 	a_ctx->cursor_font = xcb_generate_id( a_ctx->conn );
-	xcb_open_font( a_ctx->conn, a_ctx->cursor_font, strlen( "cursor" ), "cursor" );
+	xcb_open_font( a_ctx->conn, a_ctx->cursor_font, strlen( font_name ), font_name );
+
+	a_ctx->x_cursor = xcb_generate_id( a_ctx->conn );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->x_cursor, a_ctx->cursor_font, a_ctx->cursor_font, 0, 1, 0,0,0,0xFFFF,0xFFFF,0xFFFF );
 
 	a_ctx->fleur = xcb_generate_id( a_ctx->conn );
-	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->fleur, a_ctx->cursor_font, a_ctx->cursor_font, 53, 52, 0,0,0,0,0,0 );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->fleur, a_ctx->cursor_font, a_ctx->cursor_font, 52, 53, 0,0,0,0xFFFF,0xFFFF,0xFFFF );
 
 	a_ctx->pirate = xcb_generate_id( a_ctx->conn );
-	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->pirate, a_ctx->cursor_font, a_ctx->cursor_font, 89, 88, 0,0,0,0,0,0 );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->pirate, a_ctx->cursor_font, a_ctx->cursor_font, 88, 89, 0,0,0,0xFFFF,0xFFFF,0xFFFF );
 
 	a_ctx->sizing = xcb_generate_id( a_ctx->conn );
-	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->sizing, a_ctx->cursor_font, a_ctx->cursor_font, 121, 120, 0,0,0,0,0,0 );
+	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->sizing, a_ctx->cursor_font, a_ctx->cursor_font, 120, 121, 0,0,0,0xFFFF,0xFFFF,0xFFFF );
 
 	xcb_flush( a_ctx->conn );
 }
@@ -873,7 +877,10 @@ int main()
 	setupscreen( ctx.conn, root );
 	setupshape( &ctx );
 
-	uint32_t mask = XCB_CW_EVENT_MASK;
+	create_cursors( &ctx );
+	// Set a cursor on root
+
+	uint32_t mask = XCB_CW_EVENT_MASK | XCB_CW_CURSOR;
 	uint32_t values[2];
 
 	/*	XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT: equivalent to Xlib's SubstructureRedirectMask,
@@ -894,6 +901,7 @@ int main()
 //		| XCB_EVENT_MASK_ENTER_WINDOW
 //		| XCB_EVENT_MASK_LEAVE_WINDOW
 		| XCB_EVENT_MASK_FOCUS_CHANGE;
+	values[1] = ctx.x_cursor;
 
 	xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( ctx.conn, root, mask, values );
 	xcb_generic_error_t *error = xcb_request_check( ctx.conn, cookie );
@@ -903,7 +911,6 @@ int main()
 		printf( "Request failed.\n" );
 	}
 
-	create_cursors( &ctx );
 	events( &ctx );
 
 	xcb_disconnect( ctx.conn );

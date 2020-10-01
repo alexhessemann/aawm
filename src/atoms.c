@@ -254,7 +254,7 @@ xcb_atom_t get_atom_from_symbol( struct aawm_ctx * a_ctx, aawm_atom_enum_t a_sym
 		result = a_symbol; // For convenience, we also accept pre-defined atoms
 	} else if (a_symbol > AAWM_LAST_MAPPED_ATOM) {
 		result = XCB_ATOM_NONE;
-	} else if (!(result = a_ctx->atom_map[a_symbol - AAWM_LAST_X11_PREDEFINED_ATOM])) {
+	} else if (!(result = a_ctx->atom_map[a_symbol - AAWM_LAST_X11_PREDEFINED_ATOM - 1])) {
 		// test clause was a little tricky, we enter here if the atom wasn't found
 		xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply( a_ctx->conn, xcb_intern_atom( a_ctx->conn, false, strlen( atom_string[a_symbol] ), atom_string[a_symbol] ), NULL );
 		a_ctx->atom_map[a_symbol - AAWM_LAST_X11_PREDEFINED_ATOM] = reply->atom;

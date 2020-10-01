@@ -30,9 +30,11 @@ struct aawm_ctx {
 	int window_width_offset;
 	int window_height_offset;
 	xcb_font_t cursor_font;
-	xcb_cursor_t fleur;
-	xcb_cursor_t pirate;
-	xcb_cursor_t sizing;
+	// TODO: Use a table and define an enum
+	xcb_cursor_t x_cursor; // 0
+	xcb_cursor_t fleur; // 52
+	xcb_cursor_t pirate; // 88
+	xcb_cursor_t sizing; // 120
 };
 
 #endif
