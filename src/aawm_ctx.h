@@ -10,8 +10,10 @@
 struct aawm_ctx {
 	xcb_connection_t *conn;
 	xcb_screen_t *screen;
-	// X extensions
+	uint32_t argb_visual;
+	// X extensions => set a structure with the server's configuration
 	int shape_base;
+	int render_base;
 	// Atom names
 	map_t * atom_names;
 	xcb_atom_t atom_map[AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM];

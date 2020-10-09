@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <xcb/xcb.h>
+#include <xcb/render.h>
 #include <xcb/shape.h>
 #include <xcb/xcb_icccm.h>
 
@@ -11,6 +12,59 @@
 //#include "circle_menu.xbm"
 #include "get_constant_string.h"
 #include "utfconv.h"
+
+/* Data tree for VISUALID and PICTFORMAT
+ *
+ *	xcb_setup_t = xcb_get_setup()
+ *	.image_byte_order
+ *	.bitmap_format_bit_order
+ *	.bitmap_format_scanline_unit
+ *	.bitmap_format_scanline_pad
+ *	xcb_format_t = xcb_setup_pixmap_formats(xcb_setup_t) // pixmap-formats
+ *		.depth
+ *		.bits_per_pixel
+ *		.scanline_pad
+ *	xcb_screen_t = xcb_setup_roots_iterator(xcb_setup_t).data // roots
+ *		.root_depth
+ *		.root_visual
+ * 		xcb_depth_t = xcb_screen_allowed_depths_iterator(xcb_screen_t).data // allowed-depths
+ *			.depth
+ *			xcb_visualtype_t = xcb_depth_visuals(xcb_depth_t) // visuals
+ *				.visual_id <= For non-render pixmaps, to associate with pixmap-format for the given depth.
+ *				._class
+ *				.bits_per_rgb_value
+ *				.red_mask
+ *				.green_mask
+ *				.blue_mask
+ *
+ *	xcb_render_query_pict_formats_reply_t = xcb_render_query_pict_formats()
+ *		xcb_render_pictforminfo_t = xcb_render_query_pict_formats_formats(xcb_render_query_pict_formats_reply_t) // formats
+ *			.id <=
+ *			.type
+ *			.depth
+ *			.direct
+ *				.red
+ *					.shift
+ *					.mask
+ *				.green
+ *					.shift
+ *					.mask
+ *				.blue
+ *					.shift
+ *					.mask
+ *				.alpha
+ *					.shift
+ *					.mask
+ *		xcb_render_pictscreen_t = xcb_render_query_pict_formats_screens_iterator(xcb_render_query_pict_formats_reply_t).data // screens
+ *			xcb_render_pictdepth_t = xcb_render_pictscreen_depths_iterator(xcb_render_pictscreen_t).data
+ *				.depth
+ *				xcb_render_pictvisual_t = xcb_render_pictdepth_visuals(xcb_render_pictdepth_t) // visuals
+ *					.visual <= visual from xcb_setup_t
+ *					.format <= associated format (id) from xcb_render_pictforminfo_t
+ *		uint32_t = xcb_render_query_pict_formats_subpixels(xcb_render_query_pict_formats_reply_t) // subpixels
+ *
+ *	xcb_render_pictforminfo_t.direct and xcb_visualtype_t.*mask should match, but xcb_render_pictforminfo_t also has alpha channel.
+ */
 
 int setupscreen( xcb_connection_t *a_conn, xcb_drawable_t a_root )
 {
@@ -54,6 +108,24 @@ int setupshape( struct aawm_ctx* a_ctx )
 }
 
 
+int setuprender( struct aawm_ctx* a_ctx )
+{
+	const xcb_query_extension_reply_t *extension = xcb_get_extension_data( a_ctx->conn, &xcb_render_id );
+	if (!extension->present) {
+		printf( "No render extension.\n" );
+		return -1;
+	}
+
+	a_ctx->render_base = extension->first_event;
+	printf( "Render base is %d\n", a_ctx->render_base );
+
+	xcb_render_query_version_reply_t * version = xcb_render_query_version_reply( a_ctx->conn, xcb_render_query_version( a_ctx->conn, 1, 12 ), NULL );
+	printf( "Render version %d.%d\n", version->major_version, version->minor_version );
+
+	return a_ctx->render_base;
+}
+
+
 void map_request_passthrough( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev )
 {
 	xcb_map_window( a_ctx->conn, a_ev->window );
@@ -73,7 +145,7 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 	const char * type_name = get_atom_name( a_ctx, prop_reply->type );
 	aawm_atom_enum_t type = get_symbol_from_atom( a_ctx, prop_reply->type );
 
-	printf( "\t%d %s type %s value length %d - %d, bytes after %d", a_atom, a_atom_name, type_name, xcb_get_property_value_length( prop_reply), prop_reply->value_len, prop_reply->bytes_after );
+	printf( "\t%d %s type %s value length %d - %d, bytes after %d", a_atom, a_atom_name, type_name, xcb_get_property_value_length( prop_reply ), prop_reply->value_len, prop_reply->bytes_after );
 
 	switch (type) {
 		case XCB_ATOM_STRING:
@@ -86,6 +158,45 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 				uint32_t * values = (uint32_t *) xcb_get_property_value( prop_reply );
 				for (i = 0; i < (prop_reply->value_len < 10 ? prop_reply->value_len : 10); i++ ) {
 					printf( " %d (0x%X)", values[i], values[i] );
+				}
+				if (a_atom == get_atom_from_symbol( a_ctx, AAWM_ATOM_NET_WM_ICON )) {
+					// We re-read the whole value to avoid concurrency issues
+					xcb_get_property_reply_t *prop_reply2 = xcb_get_property_reply( a_ctx->conn, xcb_get_property( a_ctx->conn, false, a_window, a_atom, XCB_GET_PROPERTY_TYPE_ANY, 0, (163 + prop_reply->bytes_after) / 4 ), &error );
+					if (error != NULL) {
+						printf( "GetProperty ERROR type %d, code %d\n", error->response_type, error->error_code );
+						return;
+					}
+					printf( "\n\tRe-read says %d %s type %s value length %d - %d, bytes after %d", a_atom, a_atom_name, type_name, xcb_get_property_value_length( prop_reply2 ), prop_reply2->value_len, prop_reply2->bytes_after );
+					size_t offset = 0;
+					uint32_t * values2 = (uint32_t *) xcb_get_property_value( prop_reply2 );
+					int32_t rem_width = a_ctx->screen->width_in_pixels;
+					while (offset < prop_reply2->value_len) {
+						printf( "\n\t\tIcon %dx%d ", values2[offset], values2[offset+1] );
+
+						xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
+						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_colormap_checked ( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ) );
+						if (error != NULL) {
+							printf( "CreateColormap ERROR type %d, code %d\n", error->response_type, error->error_code );
+						}
+
+						xcb_window_t xid = xcb_generate_id( a_ctx->conn );
+						rem_width -=  values2[offset];
+						uint32_t values3[] = { 0, cmapid };
+						error = xcb_request_check( a_ctx->conn, xcb_create_window_checked( a_ctx->conn, 32, xid, a_ctx->screen->root, rem_width, a_ctx->screen->height_in_pixels - values2[offset+1], values2[offset], values2[offset+1], 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual, XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values3 ) );
+						if (error != NULL) {
+							printf( "CreateWindow ERROR type %d, code %d\n", error->response_type, error->error_code );
+						}
+						xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
+						error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, xid, 0, NULL ) );
+						if (error != NULL) {
+							printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
+						}
+						xcb_map_window( a_ctx->conn, xid );
+						xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, xid, gc, values2[offset], values2[offset+1], 0, 0, 0, 32, 4 * values2[offset] * values2[offset+1], (uint8_t *) (&values2[offset+2]) );
+
+						offset += 2 + values2[offset] * values2[offset+1];
+					}
+					xcb_flush( a_ctx->conn );
 				}
 			}
 			break;
@@ -109,14 +220,18 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 			break;
 		case XCB_ATOM_WM_HINTS:
 			{
+//				int width = 0;
 				xcb_icccm_wm_hints_t* hints = (xcb_icccm_wm_hints_t*) xcb_get_property_value( prop_reply );
 				printf( " flags 0x%X input %d initial state %d icon pixmap 0x%X icon window 0x%X icon position [%d,%d] icon mask 0x%X, window group 0x%X", hints->flags, hints->input, hints->initial_state, hints->icon_pixmap, hints->icon_window, hints->icon_x, hints->icon_y, hints->icon_mask, hints->window_group );
+				uint32_t icon_offset = 0;
 				if (hints->icon_pixmap) {
 					xcb_get_geometry_reply_t *icongeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, hints->icon_pixmap ), NULL );
 					printf( " - icon pixmap: %dx%d+%d+%d, depth %d, border %d, root 0x%X", icongeom->width, icongeom->height, icongeom->x, icongeom->y, icongeom->depth, icongeom->border_width, icongeom->root );
+//					width = icongeom->width;
 
 					xcb_window_t xid = xcb_generate_id( a_ctx->conn );
-					xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, xid, a_ctx->screen->root, icongeom->x, 800, icongeom->width, icongeom->height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, 0, NULL );
+					icon_offset += icongeom->width;
+					xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, xid, a_ctx->screen->root, 0, a_ctx->screen->height_in_pixels - icongeom->height, icongeom->width, icongeom->height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, 0, NULL );
 					xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
 					xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, xid, 0, NULL ) );
 					if (error != NULL) {
@@ -124,6 +239,13 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 					}
 					xcb_map_window( a_ctx->conn, xid );
 					xcb_copy_area( a_ctx->conn, hints->icon_pixmap, xid, gc, 0, 0, 0, 0, icongeom->width, icongeom->height );
+				}
+				if (hints->icon_window) {
+					uint32_t values[] = { icon_offset, a_ctx->screen->height_in_pixels - 64 };
+					xcb_configure_window( a_ctx->conn, hints->icon_window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values );
+					xcb_map_window( a_ctx->conn, hints->icon_window );
+					xcb_flush( a_ctx->conn );
+					printf( "Tried to display icon window\n" );
 				}
 			}
 			break;
@@ -211,12 +333,15 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t mask;
 	uint32_t values_m[3];
 
-	uint32_t values[] = { 0x0FF, 0x0FF00 };
+	xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
+	xcb_create_colormap( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual );
+
+	uint32_t values[] = { 0x0FF, 0x7F00FF00, cmapid };
 	uint32_t values2[] = { 0xFF0000 };
 	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE };
 	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
 
-	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL, values );
+	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, 32/*XCB_COPY_FROM_PARENT*/, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual/*XCB_COPY_FROM_PARENT*/, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
 
 	xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( a_ctx->conn, frame_win->wid, event_mask, &event_mask_values );
 	/*xcb_generic_error_t *error =*/ xcb_request_check( a_ctx->conn, cookie );
@@ -510,7 +635,7 @@ void events( struct aawm_ctx *a_ctx )
 				
 				if (e->detail != XCB_NOTIFY_DETAIL_INFERIOR) {
 					uint32_t mask = XCB_CW_BORDER_PIXEL;
-					uint32_t value = 0xFFFFFF;
+					uint32_t value = 0x80FFFFFF;
 					xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value );
 					/*xcb_generic_error_t *error =*/ xcb_request_check( a_ctx->conn, cookie );
 					value = XCB_STACK_MODE_ABOVE;
@@ -528,7 +653,7 @@ void events( struct aawm_ctx *a_ctx )
 				printf( "Received leave notify%s for 0x%X (+%d+%d), child 0x%X, root 0x%X (+%d+%d) at time %d, detail %s, mode %d, same_screen_focus=0x%X, state=0x%X\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->event_x, e->event_y, e->child, e->root, e->root_x, e->root_y, e->time, get_detail_string( e->detail ), e->mode, e->same_screen_focus, e->state );
 				if (e->detail != XCB_NOTIFY_DETAIL_INFERIOR) {
 					uint32_t mask = XCB_CW_BORDER_PIXEL;
-					uint32_t value = 0xFF00;
+					uint32_t value = 0x7F00FF00;
 					xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value );
 					/*xcb_generic_error_t *error =*/ xcb_request_check( a_ctx->conn, cookie );
 					xcb_flush( a_ctx->conn );
@@ -673,27 +798,29 @@ void events( struct aawm_ctx *a_ctx )
 					xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value ) );
 				} else {
 					aawm_window_t *win = map_lookup( a_ctx->windows_list, e->event );
-					aawm_window_t *frame = map_lookup( a_ctx->windows_list, win->parent );
-					aawm_window_t *client;
-					int i;
-					bool found = false;
-					for (i = 0; !found && i < frame->children_count; i++ ) {
-						client = map_lookup( a_ctx->windows_list, frame->children[i] );
-						if (client->role == AAWM_ROLE_CLIENT) found = true;
-					}
+					if (win->role != AAWM_ROLE_FRAME) {
+						aawm_window_t *frame = map_lookup( a_ctx->windows_list, win->parent );
+						aawm_window_t *client;
+						int i;
+						bool found = false;
+						for (i = 0; !found && i < frame->children_count; i++ ) {
+							client = map_lookup( a_ctx->windows_list, frame->children[i] );
+							if (client->role == AAWM_ROLE_CLIENT) found = true;
+						}
 
-					if (win && win->role == AAWM_ROLE_CLOSE) {
-						printf( "Received close request, sending to 0x%X\n", client->wid );
-						xcb_client_message_event_t * msg = calloc( 32, 1 );
-						msg->response_type = XCB_CLIENT_MESSAGE;
-						msg->format = 32;
-						msg->window = client->wid;
-						msg->type = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_PROTOCOLS );
-						msg->data.data32[0] = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_DELETE_WINDOW );
-						msg->data.data32[1] = e->time; // XCB_CURRENT_TIME;
-						xcb_send_event( a_ctx->conn, 0, client->wid, 0, (char*)msg );
-						free( msg );
-						xcb_flush( a_ctx->conn );
+						if (win && win->role == AAWM_ROLE_CLOSE) {
+							printf( "Received close request, sending to 0x%X\n", client->wid );
+							xcb_client_message_event_t * msg = calloc( 32, 1 );
+							msg->response_type = XCB_CLIENT_MESSAGE;
+							msg->format = 32;
+							msg->window = client->wid;
+							msg->type = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_PROTOCOLS );
+							msg->data.data32[0] = get_atom_from_symbol( a_ctx, AAWM_ATOM_WM_DELETE_WINDOW );
+							msg->data.data32[1] = e->time; // XCB_CURRENT_TIME;
+							xcb_send_event( a_ctx->conn, 0, client->wid, 0, (char*)msg );
+							free( msg );
+							xcb_flush( a_ctx->conn );
+						}
 					}
 				}
 			}
@@ -852,10 +979,12 @@ void events( struct aawm_ctx *a_ctx )
 
 int main()
 {
+	int idx;
 	struct aawm_ctx ctx;
 	ctx.moving = false;
 	ctx.windows_list = map_create();
 	ctx.atom_names = map_create();
+	ctx.argb_visual = 0;
 	memset( ctx.atom_map, 0, (AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM) * sizeof(xcb_atom_t ) );
 	
 	int scrno = 0;
@@ -863,19 +992,74 @@ int main()
 
 	printf("screen no set to %d\n", scrno );
 
+	const struct xcb_setup_t * setup = xcb_get_setup( ctx.conn );
+	printf( "resource id: base 0x%X, mask 0x%X; motion buffer size %d, maximum request length %d, image byte order %d, bitmap format: bit order %d, scanline unit: %d, scanline pad %d\n", setup->resource_id_base, setup->resource_id_mask, setup->motion_buffer_size, setup->maximum_request_length, setup->image_byte_order, setup->bitmap_format_bit_order, setup->bitmap_format_scanline_unit, setup->bitmap_format_scanline_pad );
+
+	xcb_format_t *pixmap_formats = xcb_setup_pixmap_formats( setup );
+	for (int i = 0; i < xcb_setup_pixmap_formats_length( setup ); i++) {
+		printf( "\tdepth %d, bits per pixel %d, scanline pad %d\n", pixmap_formats[i].depth, pixmap_formats[i].bits_per_pixel, pixmap_formats[i].scanline_pad );
+	}
+
 	/* Find our screen. */
 	xcb_screen_iterator_t iter = xcb_setup_roots_iterator( xcb_get_setup( ctx.conn ) );
-	for (int i = 0; i < scrno; ++ i)
-	{
+	for (int i = 0; i < scrno; ++i) {
 		xcb_screen_next( &iter );
 	}
 
 	ctx.screen = iter.data;
 	xcb_drawable_t root = ctx.screen->root;
+	printf( "Screen info: root 0x%X, default colormap 0x%X, white 0x%X, black 0x%X, input masks 0x%X, dimensions in pixels %dx%d, in mm %dx%d, installed maps [%d, %d], root visual 0x%X, backing stores %d, save-unders %d, root depth %d, number of depths %d/%d\n", ctx.screen->root, ctx.screen->default_colormap, ctx.screen->white_pixel, ctx.screen->black_pixel, ctx.screen->current_input_masks, ctx.screen->width_in_pixels, ctx.screen->height_in_pixels, ctx.screen->width_in_millimeters, ctx.screen->height_in_millimeters, ctx.screen->min_installed_maps, ctx.screen->max_installed_maps, ctx.screen->root_visual, ctx.screen->backing_stores, ctx.screen->save_unders, ctx.screen->root_depth, ctx.screen->allowed_depths_len, xcb_screen_allowed_depths_length( ctx.screen ) );
+	for (
+		xcb_depth_iterator_t sdepth_iter = xcb_screen_allowed_depths_iterator( ctx.screen );
+		sdepth_iter.rem;
+		xcb_depth_next( &sdepth_iter )
+	) {
+		xcb_depth_t *sdepth_data = sdepth_iter.data;
+		printf( "\tdepth %d, %d/%d visuals\n", sdepth_data->depth, sdepth_data->visuals_len, xcb_depth_visuals_length( sdepth_data ) );
+		for (
+			xcb_visualtype_iterator_t visal_iter = xcb_depth_visuals_iterator( sdepth_data );
+			visal_iter.rem;
+			xcb_visualtype_next( &visal_iter )
+		) {
+			xcb_visualtype_t *visual_data = visal_iter.data;
+			if (sdepth_data->depth == 32 && !ctx.argb_visual) { ctx.argb_visual = visual_data->visual_id; }
+			printf( "\t\tvisual id 0x%X: class %d bits per rgb value %d colormap entries %d red mask 0x%X green mask 0x%X blue mask 0x%X\n", visual_data->visual_id, visual_data->_class, visual_data->bits_per_rgb_value, visual_data->colormap_entries, visual_data->red_mask, visual_data->green_mask, visual_data->blue_mask );
+		}
+	}
 	printf( "Screen size: %dx%d\nRoot window: 0x%X\n", ctx.screen->width_in_pixels, ctx.screen->height_in_pixels, ctx.screen->root );
 
 	setupscreen( ctx.conn, root );
 	setupshape( &ctx );
+	setuprender( &ctx );
+
+	xcb_render_query_pict_formats_reply_t *render_reply = xcb_render_query_pict_formats_reply( ctx.conn, xcb_render_query_pict_formats( ctx.conn ), NULL );
+	printf( "%d formats, %d screens, %d depths, %d visuals, %d subpixel / %d pictforminfo, %d pictscreen, %d subpixel\n", render_reply->num_formats, render_reply->num_screens, render_reply->num_depths, render_reply->num_visuals, render_reply->num_subpixel, xcb_render_query_pict_formats_formats_length( render_reply ), xcb_render_query_pict_formats_screens_length( render_reply ), xcb_render_query_pict_formats_subpixels_length( render_reply ) );
+
+	xcb_render_pictforminfo_t *formats = xcb_render_query_pict_formats_formats( render_reply );
+	for (idx = 0; idx < xcb_render_query_pict_formats_formats_length( render_reply ); idx++) {
+		printf( "\tpictformat 0x%X: type %d depth %d directformat [R(%d,0x%X), G(%d,0x%X), B(%d,0x%X), A(%d,0x%X)] colormap 0x%X\n", formats[idx].id, formats[idx].type, formats[idx].depth, formats[idx].direct.red_shift, formats[idx].direct.red_mask, formats[idx].direct.green_shift, formats[idx].direct.green_mask, formats[idx].direct.blue_shift, formats[idx].direct.blue_mask, formats[idx].direct.alpha_shift, formats[idx].direct.alpha_mask, formats[idx].colormap );
+	}
+
+	xcb_render_pictscreen_iterator_t pictscreen_iter = xcb_render_query_pict_formats_screens_iterator( render_reply );
+	xcb_render_pictscreen_t *pictscreen_data = pictscreen_iter.data;
+	printf( "\t%d/%d depths, fallback is 0x%X\n", xcb_render_pictscreen_depths_length( pictscreen_data ), pictscreen_data->num_depths, pictscreen_data->fallback );
+
+	for (
+		xcb_render_pictdepth_iterator_t depth_iter = xcb_render_pictscreen_depths_iterator( pictscreen_data );
+		depth_iter.rem;
+		xcb_render_pictdepth_next( &depth_iter )
+	) {
+		xcb_render_pictdepth_t* depth_data = depth_iter.data;
+		printf( "\tdepth %d, %d visuals\n", depth_data->depth, depth_data->num_visuals );
+		for (
+			xcb_render_pictvisual_iterator_t pict_iter = xcb_render_pictdepth_visuals_iterator( depth_data );
+			pict_iter.rem;
+			xcb_render_pictvisual_next( &pict_iter )
+		) {
+			xcb_render_pictvisual_t* pict_data = pict_iter.data;
+			printf( "\t\tvisual 0x%X, pictformat 0x%X\n", pict_data->visual, pict_data->format );
+		}
+	}
 
 	create_cursors( &ctx );
 	// Set a cursor on root
