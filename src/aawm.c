@@ -233,12 +233,20 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 					icon_offset += icongeom->width;
 					xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, xid, a_ctx->screen->root, 0, a_ctx->screen->height_in_pixels - icongeom->height, icongeom->width, icongeom->height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, 0, NULL );
 					xcb_gcontext_t gc = xcb_generate_id( a_ctx->conn );
-					xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, xid, 0, NULL ) );
+					uint32_t gc_mask = XCB_GC_FOREGROUND | XCB_GC_BACKGROUND;
+					uint32_t gc_values[] = { a_ctx->screen->black_pixel, a_ctx->screen->white_pixel };
+					xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_gc_checked( a_ctx->conn, gc, xid, gc_mask, gc_values ) );
 					if (error != NULL) {
 						printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
 					}
+					// TODO: check mask first
+					xcb_shape_mask( a_ctx->conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING, xid, 0, 0, hints->icon_mask );
 					xcb_map_window( a_ctx->conn, xid );
-					xcb_copy_area( a_ctx->conn, hints->icon_pixmap, xid, gc, 0, 0, 0, 0, icongeom->width, icongeom->height );
+					if (icongeom->depth == 1) {
+						xcb_copy_plane( a_ctx->conn, hints->icon_pixmap, xid, gc, 0, 0, 0, 0, icongeom->width, icongeom->height, 1 );
+					} else {
+						xcb_copy_area( a_ctx->conn, hints->icon_pixmap, xid, gc, 0, 0, 0, 0, icongeom->width, icongeom->height );
+					}
 				}
 				if (hints->icon_window) {
 					uint32_t values[] = { icon_offset, a_ctx->screen->height_in_pixels - 64 };
