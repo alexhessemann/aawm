@@ -270,12 +270,21 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 }
 
 
+// ┼
+//	xcb_list_properties xcb_open_font xcb_get_geometry xcb_create_colormap xcb_change_window_attributes
+//  ║         ┌─────────┘                       ╙─────┬─────┘
+//  │         │                                xcb_create_window
+//  │         │   ┌─────────────────┬─────────────────┼──────────────────────┬────────────────┐
+//  │ xcb_create_gc xcb_change_window_attributes xcb_create_window(x4) xcb_reparent_window xcb_map_window(x2)
+//  └────┬────┘                                       │
+// xcb_poly_text_16                               xcb_map_window(x4)
+//
 void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev )
 {
 	char *name = NULL;
 	int name_len;
 
-	// Create internal structures for child windows
+	// Create internal structures for frame and child windows
 
 	xcb_window_t xid = xcb_generate_id( a_ctx->conn );
 	aawm_window_t *frame_win = aawm_allocate_window( xid, AAWM_ROLE_FRAME, a_ctx->screen->root );
@@ -327,6 +336,8 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 		}
 	}
 
+	// Create frame and child windows
+
 	uint32_t event_mask = XCB_CW_EVENT_MASK;
 	uint32_t event_mask_values = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
 		| XCB_EVENT_MASK_ENTER_WINDOW
@@ -347,7 +358,10 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t values[] = { 0x0FF, 0x7F00FF00, cmapid };
 	uint32_t values2[] = { 0xFF0000 };
 	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE };
+
 	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
+
+//	if (wgeom->width > a_ctx->screen->width_in_pixels
 
 	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, 32/*XCB_COPY_FROM_PARENT*/, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual/*XCB_COPY_FROM_PARENT*/, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
 
