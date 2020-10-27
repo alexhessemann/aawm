@@ -173,6 +173,7 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 					while (offset < prop_reply2->value_len) {
 						printf( "\n\t\tIcon %dx%d ", values2[offset], values2[offset+1] );
 
+						// XXX: We only need one colormap that we reuse.
 						xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
 						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_colormap_checked ( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ) );
 						if (error != NULL) {
@@ -225,6 +226,15 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 				printf( " flags 0x%X input %d initial state %d icon pixmap 0x%X icon window 0x%X icon position [%d,%d] icon mask 0x%X, window group 0x%X", hints->flags, hints->input, hints->initial_state, hints->icon_pixmap, hints->icon_window, hints->icon_x, hints->icon_y, hints->icon_mask, hints->window_group );
 				uint32_t icon_offset = 0;
 				if (hints->icon_pixmap) {
+					//      xcb_get_geometry
+					//             ║
+					//      xcb_create_window
+					//       ┌─────┴─────┐
+					// xcb_create_gc xcb_shape_mask
+					//       │           │
+					//       │       xcb_map_window
+					//       ├───────────┤
+					// xcb_copy_plane xcb_copy_area
 					xcb_get_geometry_reply_t *icongeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, hints->icon_pixmap ), NULL );
 					printf( " - icon pixmap: %dx%d+%d+%d, depth %d, border %d, root 0x%X", icongeom->width, icongeom->height, icongeom->x, icongeom->y, icongeom->depth, icongeom->border_width, icongeom->root );
 //					width = icongeom->width;
@@ -271,18 +281,24 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 
 
 // ┼
-//	xcb_list_properties xcb_open_font xcb_get_geometry xcb_create_colormap xcb_change_window_attributes
-//  ║         ┌─────────┘                       ╙─────┬─────┘
-//  │         │                                xcb_create_window
-//  │         │   ┌─────────────────┬─────────────────┼──────────────────────┬────────────────┐
-//  │ xcb_create_gc xcb_change_window_attributes xcb_create_window(x4) xcb_reparent_window xcb_map_window(x2)
-//  └────┬────┘                                       │
-// xcb_poly_text_16                               xcb_map_window(x4)
+// xcb_list_properties xcb_open_font xcb_get_geometry xcb_create_colormap xcb_change_window_attributes
+// ║         ┌─────────┘                       ╙─────┬─────┘
+// │         │                                xcb_create_window
+// │         │   ┌─────────────────┬─────────────────┼──────────────────────┬────────────────┐
+// │ xcb_create_gc xcb_change_window_attributes xcb_create_window(x4) xcb_reparent_window xcb_map_window(x2)
+// └────┬────┘                                       │
+// xcb_poly_text_16                             xcb_map_window(x4)
 //
 void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev )
 {
 	char *name = NULL;
 	int name_len;
+
+	// Send requests that return a result right away
+
+	xcb_list_properties_cookie_t prop_cookie = xcb_list_properties( a_ctx->conn, a_ev->window );
+	xcb_get_geometry_cookie_t geom_cookie = xcb_get_geometry( a_ctx->conn, a_ev->window );
+	xcb_flush( a_ctx->conn );
 
 	// Create internal structures for frame and child windows
 
@@ -312,7 +328,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	// Read, parse and display properties of the client
 
-	xcb_list_properties_reply_t * props = xcb_list_properties_reply( a_ctx->conn, xcb_list_properties( a_ctx->conn, a_ev->window ), NULL );
+	xcb_list_properties_reply_t * props = xcb_list_properties_reply( a_ctx->conn, prop_cookie, NULL );
 	int prop_count =  xcb_list_properties_atoms_length( props );
 	printf( "Window 0x%X defines %d properties:\n", a_ev->window, prop_count );
 	xcb_atom_t *prop_atoms = xcb_list_properties_atoms( props );
@@ -339,14 +355,16 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	// Create frame and child windows
 
 	uint32_t event_mask = XCB_CW_EVENT_MASK;
-	uint32_t event_mask_values = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
+	uint32_t event_mask_values =
+		XCB_EVENT_MASK_BUTTON_PRESS
+		| XCB_EVENT_MASK_BUTTON_RELEASE
 		| XCB_EVENT_MASK_ENTER_WINDOW
 		| XCB_EVENT_MASK_LEAVE_WINDOW
+		| XCB_EVENT_MASK_BUTTON_1_MOTION
+		| XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
+		| XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT
 		| XCB_EVENT_MASK_FOCUS_CHANGE
-		| XCB_EVENT_MASK_PROPERTY_CHANGE
-		| XCB_EVENT_MASK_BUTTON_PRESS
-		| XCB_EVENT_MASK_BUTTON_RELEASE
-		| XCB_EVENT_MASK_BUTTON_1_MOTION;
+		| XCB_EVENT_MASK_PROPERTY_CHANGE;
 
 	// used later
 	uint32_t mask;
@@ -359,7 +377,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t values2[] = { 0xFF0000 };
 	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE };
 
-	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, xcb_get_geometry( a_ctx->conn, a_ev->window ), NULL );
+	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, geom_cookie, NULL );
 
 //	if (wgeom->width > a_ctx->screen->width_in_pixels
 
@@ -367,11 +385,9 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	xcb_void_cookie_t cookie = xcb_change_window_attributes_checked( a_ctx->conn, frame_win->wid, event_mask, &event_mask_values );
 	/*xcb_generic_error_t *error =*/ xcb_request_check( a_ctx->conn, cookie );
-	xcb_flush( a_ctx->conn );
 
 	uint32_t prop_test = XCB_EVENT_MASK_PROPERTY_CHANGE;
 	xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, client_win->wid, XCB_CW_EVENT_MASK, &prop_test ) );
-	xcb_flush( a_ctx->conn );
 
 	xcb_generic_error_t * error;
 	xcb_font_t fid = xcb_generate_id( a_ctx->conn );
@@ -454,16 +470,32 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 }
 
 
-void configure_window_passthrough( xcb_connection_t* a_conn, xcb_configure_request_event_t *a_ev )
+int configure_window_pre( const xcb_configure_request_event_t *a_ev )
 {
-	printf( "Requested configuration: %d%sx%d%s+%d%s+%d%s, border %d%s, stacking %d%s to sibling %d%s\n", a_ev->width, (a_ev->value_mask & 4) ? "!" : "", a_ev->height, (a_ev->value_mask & 8) ? "!" : "", a_ev->x, (a_ev->value_mask & 1) ? "!" : "", a_ev->y, (a_ev->value_mask & 2) ? "!" : "", a_ev->border_width, (a_ev->value_mask & 16) ? "!" : "", a_ev->stack_mode, (a_ev->value_mask & 64) ? "!" : "", a_ev->sibling, (a_ev->value_mask & 32) ? "!" : "" );
-
 	int value_count = 0;
-	int count_mask;
-	for (count_mask = 1; count_mask < 256; count_mask <<= 1) {
+	for (int count_mask = 1; count_mask < 256; count_mask <<= 1) {
 		if (a_ev->value_mask & count_mask) value_count++;
 	}
 
+	printf( "Configure request: " );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_X) printf( "x: %d ", a_ev->x );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_Y) printf( "y: %d ", a_ev->y );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) printf( "width: %d ", a_ev->width );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) printf( "height: %d ", a_ev->height );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) printf( "border width: %d ", a_ev->border_width );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_SIBLING) printf( "stack sibling: %d ", a_ev->sibling );
+	if (a_ev->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) printf( "stack mode: %d ", a_ev->stack_mode );
+	printf( "\n" );
+
+	return value_count;
+}
+
+
+// Basically configure the window as the client asked, but ensure that the window fits on screen
+//
+void configure_window_permissive( struct aawm_ctx *a_ctx, xcb_configure_request_event_t *a_ev )
+{
+	int value_count = configure_window_pre( a_ev );
 	uint32_t *values = malloc( value_count * sizeof( uint32_t ) );
 
 	int idx = 0;
@@ -475,8 +507,120 @@ void configure_window_passthrough( xcb_connection_t* a_conn, xcb_configure_reque
 	if (a_ev->value_mask & 32) values[idx++] = a_ev->sibling;
 	if (a_ev->value_mask & 64) values[idx++] = a_ev->stack_mode;
 
-	xcb_configure_window( a_conn, a_ev->window, a_ev->value_mask, values );
-	xcb_flush( a_conn );
+	xcb_configure_window( a_ctx->conn, a_ev->window, a_ev->value_mask, values );
+	xcb_flush( a_ctx->conn );
+	free( values );
+}
+
+
+// frame.x = max( 1 - frame.border_width, client.req_x - frame.border_width )
+// frame.y = max( 1 - frame.border_width, client.req_y - frame.border_width - frame.title_bar_height )
+// frame.width = client.width + 2 * client.border_width
+// frame.height = client.height + 2 * client.border_width + frame.title_bar_height + frame.resize_bar_height
+// client.x = 0
+// client.y = frame.title_bar_height
+//
+// Current frame constants are:
+// frame.border_width = 5
+// frame.title_bar_height = 20
+// frame.resize_bar_height = 10
+void configure_window_reparented_passthrough( struct aawm_ctx *a_ctx, xcb_configure_request_event_t *a_ev )
+{
+	int value_count = configure_window_pre( a_ev );
+	uint32_t *values = malloc( value_count * sizeof( uint32_t ) );
+
+	aawm_window_t *win = map_lookup( a_ctx->windows_list, a_ev->window );
+	int idx = 0;
+	int fr_idx = 0;
+	uint32_t fr_values[4];
+	uint32_t button_values[2];
+
+	if (win && win->role == AAWM_ROLE_CLIENT) {
+		// Don't move the client window but the frame window instead,
+		// and resize both client window and frame window
+		// TODO: move buttons, too !
+		uint16_t cl_mask = a_ev->value_mask;
+		uint16_t fr_mask = 0;
+		uint16_t close_mask = XCB_CONFIG_WINDOW_X;
+		uint16_t resize_mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y;
+		aawm_window_t *frame = map_lookup( a_ctx->windows_list, win->parent );
+		aawm_window_t *close = NULL;
+		aawm_window_t *resize = NULL;
+		if (frame) {
+			for (int idx = 0; idx < frame->children_count; idx++)
+			{
+				aawm_window_t *child = map_lookup( a_ctx->windows_list, frame->children[idx] );
+				if (child) {
+					if (child->role == AAWM_ROLE_CLOSE) { close = child; }
+					else if (child->role == AAWM_ROLE_RESIZE) { resize = child; }
+				}
+			}
+		}
+
+		if (cl_mask & XCB_CONFIG_WINDOW_X) {
+			cl_mask &= ~XCB_CONFIG_WINDOW_X;
+			fr_mask |= XCB_CONFIG_WINDOW_X;
+			fr_values[fr_idx++] = a_ev->x - 5;
+		}
+		if (cl_mask & XCB_CONFIG_WINDOW_Y) {
+			cl_mask &= ~XCB_CONFIG_WINDOW_Y;
+			fr_mask |= XCB_CONFIG_WINDOW_Y;
+			fr_values[fr_idx++] = a_ev->y - 15;
+		}
+		if (cl_mask & XCB_CONFIG_WINDOW_WIDTH) {
+			values[idx++] = a_ev->width;
+			fr_mask |= XCB_CONFIG_WINDOW_WIDTH;
+			fr_values[fr_idx++] = a_ev->width;
+		}
+		if (cl_mask & XCB_CONFIG_WINDOW_HEIGHT) {
+			values[idx++] = a_ev->height;
+			fr_mask |= XCB_CONFIG_WINDOW_HEIGHT;
+			fr_values[fr_idx++] = a_ev->height + 30;
+		}
+		button_values[0] = a_ev->width - 19;
+		button_values[1] = a_ev->height + 21;
+		if (cl_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) values[idx++] = a_ev->border_width;
+		if (cl_mask & XCB_CONFIG_WINDOW_SIBLING) values[idx++] = a_ev->sibling;
+		if (cl_mask & XCB_CONFIG_WINDOW_STACK_MODE) values[idx++] = a_ev->stack_mode;
+		xcb_configure_window( a_ctx->conn, win->parent, fr_mask, fr_values );
+		if (close) {
+			xcb_configure_window( a_ctx->conn, close->wid, close_mask, &button_values );
+		}
+		if (resize) {
+			xcb_configure_window( a_ctx->conn, resize->wid, resize_mask, &button_values );
+		}
+		xcb_configure_window( a_ctx->conn, a_ev->window, cl_mask, values );
+	} else {
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_X) values[idx++] = a_ev->x;
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_Y) values[idx++] = a_ev->y;
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) values[idx++] = a_ev->width;
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) values[idx++] = a_ev->height;
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) values[idx++] = a_ev->border_width;
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_SIBLING) values[idx++] = a_ev->sibling;
+		if (a_ev->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) values[idx++] = a_ev->stack_mode;
+		xcb_configure_window( a_ctx->conn, a_ev->window, a_ev->value_mask, values );
+	}
+	xcb_flush( a_ctx->conn );
+	free( values );
+}
+
+
+void configure_window_passthrough( struct aawm_ctx *a_ctx, xcb_configure_request_event_t *a_ev )
+{
+	int value_count = configure_window_pre( a_ev );
+	uint32_t *values = malloc( value_count * sizeof( uint32_t ) );
+
+	int idx = 0;
+	if (a_ev->value_mask & 1) values[idx++] = a_ev->x;
+	if (a_ev->value_mask & 2) values[idx++] = a_ev->y;
+	if (a_ev->value_mask & 4) values[idx++] = a_ev->width;
+	if (a_ev->value_mask & 8) values[idx++] = a_ev->height;
+	if (a_ev->value_mask & 16) values[idx++] = a_ev->border_width;
+	if (a_ev->value_mask & 32) values[idx++] = a_ev->sibling;
+	if (a_ev->value_mask & 64) values[idx++] = a_ev->stack_mode;
+
+	xcb_configure_window( a_ctx->conn, a_ev->window, a_ev->value_mask, values );
+	xcb_flush( a_ctx->conn );
 	free( values );
 }
 
@@ -506,8 +650,6 @@ void create_cursors( struct aawm_ctx *a_ctx )
 
 	a_ctx->sizing = xcb_generate_id( a_ctx->conn );
 	xcb_create_glyph_cursor( a_ctx->conn, a_ctx->sizing, a_ctx->cursor_font, a_ctx->cursor_font, 120, 121, 0,0,0,0xFFFF,0xFFFF,0xFFFF );
-
-	xcb_flush( a_ctx->conn );
 }
 
 
@@ -530,8 +672,15 @@ void events( struct aawm_ctx *a_ctx )
 			{
 				xcb_map_request_event_t *e = (xcb_map_request_event_t *) ev;
 				printf( "Received map request%s from 0x%X for 0x%X\n", (e->response_type & 0x80) ? " (S)" : "", e->parent, e->window );
-//				map_request_passthrough( a_ctx, e );
-				map_request_reparent( a_ctx, e );
+				aawm_window_t *win = map_lookup( a_ctx->windows_list, e->window );
+				if (win && win->role == AAWM_ROLE_CLIENT) {
+					xcb_map_window( a_ctx->conn, e->window );
+					xcb_map_window( a_ctx->conn, win->parent );
+					xcb_flush( a_ctx->conn );
+				} else {
+//					map_request_passthrough( a_ctx, e );
+					map_request_reparent( a_ctx, e );
+				}
 			}
 			break;
 
@@ -539,7 +688,7 @@ void events( struct aawm_ctx *a_ctx )
 			{
 				xcb_configure_request_event_t *e = (xcb_configure_request_event_t *) ev;
 				printf( "Received configure request%s from 0x%X for 0x%X, %dx%d+%d+%d, mask 0x%04x\n", (e->response_type & 0x80) ? " (S)" : "", e->parent, e->window, e->width, e->height, e->x, e->y, e->value_mask );
-				configure_window_passthrough( a_ctx->conn, e );
+				configure_window_reparented_passthrough( a_ctx, e );
 			}
 			break;
 
@@ -606,6 +755,11 @@ void events( struct aawm_ctx *a_ctx )
 				// We receive synthesized of these ones even with only XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT in the mask. Is it because XSendEvent is targeted ?
 				xcb_unmap_notify_event_t *e = (xcb_unmap_notify_event_t *) ev;
 				printf( "Received unmap notify%s from 0x%X for 0x%X from_configure(%d)\n", (e->response_type & 0x80) ? " (S)" : "", e->event, e->window, e->from_configure );
+				aawm_window_t *win = map_lookup( a_ctx->windows_list, e->window );
+				if (win && win->role == AAWM_ROLE_CLIENT) {
+					xcb_unmap_window( a_ctx->conn, win->parent );
+					xcb_flush( a_ctx->conn );
+				}
 			}
 			break;
 

@@ -184,7 +184,7 @@ const char * get_atom_name( struct aawm_ctx * a_ctx, xcb_atom_t a_atom )
 			atom_name_z[atom_name_len] = 0;
 			memcpy( atom_name_z, atom_name, atom_name_len );
 			map_add( a_ctx->atom_names, a_atom, atom_name_z );
-			fprintf( stderr, "Added name \"%s\" for atom %d\n", atom_name_z, a_atom );
+//			fprintf( stderr, "Added name \"%s\" for atom %d\n", atom_name_z, a_atom );
 		}
 		result = atom_name_z;
 	}
