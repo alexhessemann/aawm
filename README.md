@@ -9,7 +9,7 @@ The project is in the experimentation phase. Don't expect too much :)
 
 Ensure that the needed libraries are installed.
 
-On Debian-based systems, these are `libxcb1-dev`, `libxcb-shape0-dev` and `libxcb-render0-dev`.
+On Debian-based systems, these are `libxcb1-dev`, `libxcb-shape0-dev` and `libxcb-render0-dev`, `libxcb-xinput-dev`, `libxcb-xfixes0-dev`.
 
       make
 

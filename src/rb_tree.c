@@ -27,17 +27,17 @@ typedef struct node {
 #pragma mark Helper functions
 #endif
 
-node_t *get_parent( node_t *a_node )
+static node_t *get_parent( node_t *a_node )
 {
 	return a_node ? a_node->parent : NULL;
 }
 
-node_t *get_grand_parent( node_t *a_node )
+static node_t *get_grand_parent( node_t *a_node )
 {
 	return (a_node && a_node->parent) ? a_node->parent->parent : NULL;
 }
 
-node_t *get_sibling( node_t *a_node )
+static node_t *get_sibling( node_t *a_node )
 {
 	node_t *result;
 	node_t *parent = get_parent( a_node );
@@ -57,7 +57,7 @@ node_t *get_sibling( node_t *a_node )
 	return result;
 }
 
-node_t *get_uncle( node_t *a_node )
+static node_t *get_uncle( node_t *a_node )
 {
 	return get_sibling( get_parent( a_node ) );
 }
@@ -70,7 +70,7 @@ node_t *get_uncle( node_t *a_node )
 //   ┌─┴─┐   ┌─┴─┐        ┌─┴─┐  ┌─┴─┐
 //  *tl  tr  nl  tl       3   5  1   3
 //
-void rotate_left( node_t *a_node )
+static void rotate_left( node_t *a_node )
 {
 	assert( a_node );
 	node_t *temp_node = a_node->right;
@@ -102,7 +102,7 @@ void rotate_left( node_t *a_node )
 //  ┌─┴─┐       ┌─┴─┐    ┌─┴─┐      ┌─┴─┐
 // *tl  tr      tr  nr   1   3      3   5
 //
-void rotate_right( node_t *a_node )
+static void rotate_right( node_t *a_node )
 {
 	assert( a_node );
 	node_t *temp_node = a_node->left;
@@ -131,6 +131,10 @@ void rotate_right( node_t *a_node )
 #pragma mark Tree operations
 #endif
 
+// Search for the node matching the key in the subtree of root.
+// Return this node if it exists.
+// If the node doesn't exist and a_parent is defined, set it to the parent node
+// where a node with this key could be inserted.
 node_t * find_node( const node_t * a_root, unsigned long a_key, node_t ** a_parent )
 {
 	node_t *current = a_root;
@@ -163,6 +167,9 @@ node_t * find_node( const node_t * a_root, unsigned long a_key, node_t ** a_pare
 }
 
 
+// Insert a node in the tree, if its key isn't already present in the tree.
+// Doesn't re-balance the tree.
+// TODO: Should use find_node
 static bool basic_insert( node_t *a_root, node_t *a_node )
 {
 	// This function can't be used to insert a subtree.

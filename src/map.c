@@ -118,11 +118,12 @@ void * map_reassign( map_t *a_map, uint32_t a_key, void * a_value )
 
 
 // On realloc failure (which shouldn't happen), we keep the old memory block.
-map_t * map_remove( map_t *a_map, uint32_t a_key )
+map_t * map_remove( map_t *a_map, uint32_t a_key, void ** a_value )
 {
 	map_t * result = NULL;
 	uint32_t idx = map_lookup_index( a_map, a_key );
 	if (a_map->entries[idx].key == a_key) {
+		if (a_value) { *a_value = a_map->entries[idx].value; }
 		if (--a_map->entry_count) {
 			memmove( &a_map->entries[idx], &a_map->entries[idx + 1], (a_map->entry_count - idx) * sizeof( struct map_entry ) );
 			struct map_entry * entries = realloc( a_map->entries, a_map->entry_count * sizeof( struct map_entry ) );

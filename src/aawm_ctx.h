@@ -14,6 +14,7 @@ struct aawm_ctx {
 	// X extensions => set a structure with the server's configuration
 	int shape_base;
 	int render_base;
+	int input_base;
 	// Atom names
 	map_t * atom_names;
 	xcb_atom_t atom_map[AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM];

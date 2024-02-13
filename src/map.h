@@ -25,7 +25,7 @@ void * map_reassign( map_t *a_map, uint32_t a_key, void * a_value );
 
 // The pointed value isn't freed to avoid a double free
 // NULL is returned if a_entry->key was not found in the set.
-map_t * map_remove( map_t *a_map, uint32_t a_key );
+map_t * map_remove( map_t *a_map, uint32_t a_key, void ** a_value );
 
 // NULL is returned if a_key not found.
 void * map_lookup( map_t *a_map, uint32_t a_key );

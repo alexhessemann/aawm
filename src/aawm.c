@@ -5,6 +5,7 @@
 #include <xcb/render.h>
 #include <xcb/shape.h>
 #include <xcb/xcb_icccm.h>
+#include <xcb/xinput.h> // requires xfixes
 
 #include "aawm_ctx.h"
 #include "aawm_window.h"
@@ -123,6 +124,52 @@ int setuprender( struct aawm_ctx* a_ctx )
 	printf( "Render version %d.%d\n", version->major_version, version->minor_version );
 
 	return a_ctx->render_base;
+}
+
+
+int setup_xinput( struct aawm_ctx* a_ctx )
+{
+	const xcb_query_extension_reply_t *extension = xcb_get_extension_data( a_ctx->conn, &xcb_input_id );
+	if (!extension->present) {
+		printf( "No XInput extension.\n" );
+		return -1;
+	}
+
+	a_ctx->input_base = extension->first_event;
+	printf( "Input base is %d\n", a_ctx->input_base );
+
+	xcb_input_xi_query_version_reply_t *version = xcb_input_xi_query_version_reply( a_ctx->conn, xcb_input_xi_query_version( a_ctx->conn, 2, 3 ), NULL );
+	printf( "Xinput version %d.%d\n", version->major_version, version->minor_version );
+
+	return a_ctx->input_base;
+}
+
+
+void check_xinputs( struct aawm_ctx* a_ctx )
+{
+	xcb_input_xi_query_device_reply_t *reply = xcb_input_xi_query_device_reply( a_ctx->conn, xcb_input_xi_query_device( a_ctx->conn, 0 /* AllDevices */ ), NULL );
+	if (reply) {
+		printf( "%d xinput devices (length %d)\n", reply->num_infos, xcb_input_xi_query_device_infos_length( reply ) );
+		for (
+			xcb_input_xi_device_info_iterator_t iter = xcb_input_xi_query_device_infos_iterator( reply );
+			iter.rem;
+			xcb_input_xi_device_info_next( &iter )
+		) {
+			xcb_input_xi_device_info_t *data = iter.data;
+			printf( "\tDevice ID %d, type %d, attachment %d, num_classes %d/%d, name_len %d/%d, enabled %d\n", data->deviceid, data->type, data->attachment, data->num_classes, xcb_input_xi_device_info_classes_length( data ), data->name_len, xcb_input_xi_device_info_name_length( data ), data->enabled );
+			printf( "\t\tname: %s\n", xcb_input_xi_device_info_name( data ) );
+			for (
+				xcb_input_device_class_iterator_t cl_iter = xcb_input_xi_device_info_classes_iterator( data );
+				cl_iter.rem;
+				xcb_input_device_class_next( &cl_iter )
+			) {
+				xcb_input_device_class_t *cl_data = cl_iter.data;
+				printf( "\t\ttype %d, len %d, source id %d\n", cl_data->type, cl_data->len, cl_data->sourceid );
+			}
+		}
+	} else {
+		printf( "xi query device failed\n" );
+	}
 }
 
 
@@ -538,7 +585,6 @@ void configure_window_reparented_passthrough( struct aawm_ctx *a_ctx, xcb_config
 	if (win && win->role == AAWM_ROLE_CLIENT) {
 		// Don't move the client window but the frame window instead,
 		// and resize both client window and frame window
-		// TODO: move buttons, too !
 		uint16_t cl_mask = a_ev->value_mask;
 		uint16_t fr_mask = 0;
 		uint16_t close_mask = XCB_CONFIG_WINDOW_X;
@@ -728,7 +774,23 @@ void events( struct aawm_ctx *a_ctx )
 					}
 					printf( "Destroying window 0x%X\n", win->parent );
 					xcb_destroy_window( a_ctx->conn, win->parent );
-					// TODO: Delete in windows_list, too.
+					aawm_window_t *frame = map_lookup( a_ctx->windows_list, win->parent );
+					if (frame) {
+						aawm_window_t *temp;
+						for (int i = 0; i < frame->children_count; i++) {
+							temp = map_lookup( a_ctx->windows_list, frame->children[i] );
+							if (temp) {
+								free( temp );
+								a_ctx->windows_list = map_remove( a_ctx->windows_list, frame->children[i], NULL );
+							}
+						}
+						free( frame->children );
+						free( frame );
+						a_ctx->windows_list = map_remove( a_ctx->windows_list, win->parent, NULL );
+					} else {
+						free( win );
+						a_ctx->windows_list = map_remove( a_ctx->windows_list, e->window, NULL );
+					}
 					xcb_flush( a_ctx->conn );
 				}
 			}
@@ -1207,6 +1269,7 @@ int main()
 	setupscreen( ctx.conn, root );
 	setupshape( &ctx );
 	setuprender( &ctx );
+	setup_xinput( &ctx );
 
 	xcb_render_query_pict_formats_reply_t *render_reply = xcb_render_query_pict_formats_reply( ctx.conn, xcb_render_query_pict_formats( ctx.conn ), NULL );
 	printf( "%d formats, %d screens, %d depths, %d visuals, %d subpixel / %d pictforminfo, %d pictscreen, %d subpixel\n", render_reply->num_formats, render_reply->num_screens, render_reply->num_depths, render_reply->num_visuals, render_reply->num_subpixel, xcb_render_query_pict_formats_formats_length( render_reply ), xcb_render_query_pict_formats_screens_length( render_reply ), xcb_render_query_pict_formats_subpixels_length( render_reply ) );
@@ -1236,6 +1299,8 @@ int main()
 			printf( "\t\tvisual 0x%X, pictformat 0x%X\n", pict_data->visual, pict_data->format );
 		}
 	}
+
+	check_xinputs( &ctx);
 
 	create_cursors( &ctx );
 	// Set a cursor on root
