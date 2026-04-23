@@ -7,10 +7,17 @@
 #include "atoms.h"
 #include "map.h"
 
+struct aawm_screen_ctx {
+	uint32_t rgb_visual;
+	uint32_t argb_visual;
+	xcb_colormap_t colormap;
+};
+
 struct aawm_ctx {
 	xcb_connection_t *conn;
 	xcb_screen_t *screen;
-	uint32_t argb_visual;
+	uint32_t rgb_visual; // Visuals and colormap are per-screen
+	uint32_t argb_visual; // Visuals and colormap are per-screen
 	// X extensions => set a structure with the server's configuration
 	int shape_base;
 	int render_base;
@@ -19,8 +26,8 @@ struct aawm_ctx {
 	map_t * atom_names;
 	xcb_atom_t atom_map[AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM];
 	// Windows
-	map_t * windows_list;
-	// Not wise to put this here
+	map_t * windows_list; // Should it be per screen ?
+	// Not wise to put this here, also we will have to take into account the possibility of XInput 2 multiple pointers feature (MPX)
 	bool moving;
 	int motion_origin_x;
 	int motion_origin_y;

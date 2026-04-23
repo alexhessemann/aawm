@@ -5,9 +5,10 @@
 #include <xcb/xcb.h>
 
 typedef enum aawm_window_role_t {
-	AAWM_ROLE_CLIENT = 0,
-	AAWM_ROLE_ROOT = 1,
-	AAWM_ROLE_FRAME = 2,
+	AAWM_ROLE_CLIENT = 0, // Client (non-WM) window
+	AAWM_ROLE_ROOT = 1, // Root window
+	AAWM_ROLE_FRAME = 2, // WM frame around client
+	// Frame buttons:
 	AAWM_ROLE_CLOSE = 3,
 	AAWM_ROLE_UTILITY = 4,
 	AAWM_ROLE_MINMAX = 5,
@@ -25,5 +26,6 @@ typedef struct aawm_window {
 aawm_window_t * aawm_allocate_window( xcb_window_t a_wid, aawm_window_role_t a_role, xcb_window_t a_parent );
 bool aawm_window_add_child( aawm_window_t *a_parent, xcb_window_t a_child );
 bool aawm_window_delete_child( aawm_window_t *a_parent, xcb_window_t a_child );
+void aawm_window_print_children( aawm_window_t *a_parent );
 
 #endif

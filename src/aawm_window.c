@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stdio.h>
+
 
 aawm_window_t * aawm_allocate_window( xcb_window_t a_wid, aawm_window_role_t a_role, xcb_window_t a_parent )
 {
@@ -54,3 +56,15 @@ bool aawm_window_delete_child( aawm_window_t *a_parent, xcb_window_t a_child )
 
 	return found;
 }
+
+void aawm_window_print_children( aawm_window_t *a_parent )
+{
+	int idx;
+	printf( "[" );
+	if (a_parent->children_count) printf( "%#X", a_parent->children[0] );
+	for (idx = 1; idx < a_parent->children_count; idx++) {
+		printf( ", %#X", a_parent->children[idx] );
+	}
+	printf( "]\n" );
+}
+
