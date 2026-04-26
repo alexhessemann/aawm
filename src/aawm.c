@@ -435,7 +435,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 //	if (wgeom->width > a_ctx->screen->width_in_pixels
 
-	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual/*XCB_COPY_FROM_PARENT*/, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->argb_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
 	/*xcb_generic_error_t **/error = xcb_request_check( a_ctx->conn, cookie );
 	if (error != NULL) {
 		printf( "map_request_reparent: Create window ERROR type %d, code %d\n", error->response_type, error->error_code );
@@ -1362,7 +1362,7 @@ void print_connection_setup( const struct xcb_setup_t * setup )
 			if (sdepth_data->visuals_len) {
 				printf( "\t\t\t┌────────┬─────────────┬───────────┬──────────┬──────────────────────────────────────┐\n" );
 				printf( "\t\t\t│ Visual │    Class    │ Bits per  │ Colormap │              Mask                    │\n" );
-				printf( "\t\t\t│   ID   │             │ RGB value │ entriess │ Red        │ Green      │ Blue       │\n" );
+				printf( "\t\t\t│   ID   │             │ RGB value │ entries  │ Red        │ Green      │ Blue       │\n" );
 				printf( "\t\t\t├────────┼─────────────┼───────────┼──────────┼────────────┼────────────┼────────────┤\n" );
 			}
 			for (
