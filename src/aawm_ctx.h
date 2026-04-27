@@ -8,6 +8,7 @@
 #include "map.h"
 
 struct aawm_screen_ctx {
+	uint32_t rgb_depth;
 	uint32_t rgb_visual;
 	uint32_t argb_visual;
 	xcb_colormap_t colormap;
@@ -16,6 +17,7 @@ struct aawm_screen_ctx {
 struct aawm_ctx {
 	xcb_connection_t *conn;
 	xcb_screen_t *screen;
+	uint32_t rgb_depth;
 	uint32_t rgb_visual; // Visuals and colormap are per-screen
 	uint32_t argb_visual; // Visuals and colormap are per-screen
 	// X extensions => set a structure with the server's configuration
@@ -29,6 +31,7 @@ struct aawm_ctx {
 	map_t * windows_list; // Should it be per screen ?
 	// Not wise to put this here, also we will have to take into account the possibility of XInput 2 multiple pointers feature (MPX)
 	bool moving;
+	bool resizing;
 	int motion_origin_x;
 	int motion_origin_y;
 	int motion_rel_x;

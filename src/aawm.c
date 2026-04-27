@@ -223,7 +223,7 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 
 						// XXX: We only need one colormap that we reuse.
 						xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
-						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_colormap_checked ( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ) );
+						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_colormap_checked ( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ? a_ctx->argb_visual : a_ctx->rgb_visual ) );
 						if (error != NULL) {
 							printf( "CreateColormap ERROR type %d, code %d\n", error->response_type, error->error_code );
 						}
@@ -231,7 +231,7 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 						xcb_window_t xid = xcb_generate_id( a_ctx->conn );
 						rem_width -=  values2[offset];
 						uint32_t values3[] = { 0, cmapid };
-						error = xcb_request_check( a_ctx->conn, xcb_create_window_checked( a_ctx->conn, 32, xid, a_ctx->screen->root, rem_width, a_ctx->screen->height_in_pixels - values2[offset+1], values2[offset], values2[offset+1], 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual, XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values3 ) );
+						error = xcb_request_check( a_ctx->conn, xcb_create_window_checked( a_ctx->conn, a_ctx->argb_visual ? 32 : a_ctx->rgb_depth, xid, a_ctx->screen->root, rem_width, a_ctx->screen->height_in_pixels - values2[offset+1], values2[offset], values2[offset+1], 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual ? a_ctx->argb_visual : a_ctx->rgb_visual, XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values3 ) );
 						if (error != NULL) {
 							printf( "CreateWindow ERROR type %d, code %d\n", error->response_type, error->error_code );
 						}
@@ -241,7 +241,8 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 							printf( "read_property XCB_ATOM_CARDINAL: CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
 						}
 						xcb_map_window( a_ctx->conn, xid );
-						xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, xid, gc, values2[offset], values2[offset+1], 0, 0, 0, 32, 4 * values2[offset] * values2[offset+1], (uint8_t *) (&values2[offset+2]) );
+						// Only works with depth 24 & 32
+						xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, xid, gc, values2[offset], values2[offset+1], 0, 0, 0, a_ctx->argb_visual ? 32 : a_ctx->rgb_depth, 4 * values2[offset] * values2[offset+1], (uint8_t *) (&values2[offset+2]) );
 
 						offset += 2 + values2[offset] * values2[offset+1];
 					}
@@ -419,7 +420,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t values_m[3];
 
 	xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
-	xcb_void_cookie_t cookie = xcb_create_colormap_checked( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual );
+	xcb_void_cookie_t cookie = xcb_create_colormap_checked( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ? a_ctx->argb_visual : a_ctx->rgb_visual );
 	xcb_generic_error_t *error = xcb_request_check( a_ctx->conn, cookie );
 	if (error != NULL) {
 		printf( "map_request_reparent: Create colormap ERROR type %d, code %d\n", error->response_type, error->error_code );
@@ -715,12 +716,18 @@ void create_cursors( struct aawm_ctx *a_ctx )
 }
 
 
+inline static void event_loop( struct aawm_ctx *a_ctx, xcb_generic_event_t *a_ev )
+{
+}
+
+
 void events( struct aawm_ctx *a_ctx )
 {
 	while (1) {
 		// TODO: When resizing windows, we want to switch from blocking to non-blocking, to only act on the latest available pointer position
 		// Use xcb_poll_for_event or xcb_poll_for_queued_event
 		xcb_generic_event_t *ev = xcb_wait_for_event( a_ctx->conn );
+		// ev = xcb_poll_for_event( a_ctx->conn );
 		switch (ev->response_type & ~0x80) {
 
 			case 0:
@@ -1129,6 +1136,7 @@ void events( struct aawm_ctx *a_ctx )
 					xcb_configure_window( a_ctx->conn, e->event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values );
 					xcb_flush( a_ctx->conn );
 				} else if (win && win->role == AAWM_ROLE_RESIZE) {
+					printf( "RESIZING\n" );
 					aawm_window_t *parent = map_lookup( a_ctx->windows_list, win->parent );
 					int i;
 					int found = 0;
@@ -1279,11 +1287,10 @@ void print_render_data( struct aawm_ctx * a_ctx )
 	}
 }
 
-
+// Sets a_ctx.screen, a_ctx.rgb_depth, a_ctx.rgb_visual, and a_ctx.argb_visual if available.
 void set_screen_defaults( int a_scrno, const struct xcb_setup_t *a_setup, struct aawm_ctx *a_ctx )
 {
-	int rgb_depth = 0;
-	bool found_root_visual = false;
+	int root_visual_depth = 0;
 
 	/* Find our screen. */
 	/* TODO: ignore scrno and try to tie to all screens */
@@ -1299,8 +1306,8 @@ void set_screen_defaults( int a_scrno, const struct xcb_setup_t *a_setup, struct
 		xcb_depth_next( &sdepth_iter )
 	) {
 		xcb_depth_t *sdepth_data = sdepth_iter.data;
-		if (sdepth_data->visuals_len && (sdepth_data->depth > rgb_depth || a_ctx->rgb_visual == 1)) {
-			if (sdepth_data->depth < 32) rgb_depth = sdepth_data->depth;
+		if (sdepth_data->visuals_len && sdepth_data->depth > a_ctx->rgb_depth) {
+			if (sdepth_data->depth < 32) a_ctx->rgb_depth = sdepth_data->depth; //rgb_visual should be distinct from argb_visual
 			for (
 				xcb_visualtype_iterator_t visual_iter = xcb_depth_visuals_iterator( sdepth_data );
 				visual_iter.rem;
@@ -1308,17 +1315,38 @@ void set_screen_defaults( int a_scrno, const struct xcb_setup_t *a_setup, struct
 			) {
 				xcb_visualtype_t *visual_data = visual_iter.data;
 				if (sdepth_data->depth == 32) {
-					a_ctx->argb_visual = visual_data->visual_id;
-					printf( "argb visual = 0x%X\n", a_ctx->argb_visual );
-				} else {
-					if (visual_data->visual_id == a_ctx->screen->root_visual) {
-						found_root_visual = true;
+					const char *txt;
+					if (!a_ctx->argb_visual) {
+						a_ctx->argb_visual = visual_data->visual_id;
+						txt="";
+					} else {
+						txt=" (ignored)";
 					}
+					printf( "argb visual = 0x%X%s\n", visual_data->visual_id, txt );
+				} else {
+					const char *txt;
+					if (!a_ctx->rgb_visual) {
+						a_ctx->rgb_visual = visual_data->visual_id;
+						if (visual_data->visual_id == a_ctx->screen->root_visual) {
+							root_visual_depth = sdepth_data->depth; 
+							txt = " (root visual found)";
+						} else {
+							txt = "";
+						}
+					} else {
+						if (visual_data->visual_id == a_ctx->screen->root_visual) {
+							a_ctx->rgb_visual = visual_data->visual_id;
+							root_visual_depth = sdepth_data->depth; 
+							txt = " (root visual found: replacing)";
+						} else {
+							txt = " (ignored)";
+						}
+					}
+					printf( "rgb visual = 0x%X%s\n", visual_data->visual_id, txt );
 				}
 			}
 		}
 	}
-
 }
 
 
@@ -1391,17 +1419,18 @@ int main()
 	// - A list of screens selected by the user on the command line
 	int scrno = 1;
 	const struct xcb_setup_t * setup;
-	xcb_screen_iterator_t iter;
 	xcb_drawable_t root; // XXX: per managed screen
-	xcb_depth_iterator_t sdepth_iter;
 
 	ctx.argb_visual = 0; // XXX: per managed screen
+	ctx.rgb_visual = 0; // XXX: per managed screen
+	ctx.rgb_depth= 0; // XXX: per managed screen
 	ctx.shape_base = -1;
 	ctx.render_base = -1;
 	ctx.input_base = -1;
 	ctx.atom_names = map_create();
 	ctx.windows_list = map_create();
 	ctx.moving = false;
+	ctx.resizing = false;
 
 	memset( ctx.atom_map, 0, (AAWM_LAST_MAPPED_ATOM - AAWM_LAST_X11_PREDEFINED_ATOM) * sizeof(xcb_atom_t ) );
 
@@ -1413,33 +1442,7 @@ int main()
 
 	set_screen_defaults( scrno, setup, &ctx );
 
-	/* Find our screen. */
-	/* TODO: ignore scrno and try to tie to all screens */
-	iter = xcb_setup_roots_iterator( setup );
-	for (int i = 0; i < scrno; ++i) {
-		xcb_screen_next( &iter );
-	}
-	ctx.screen = iter.data;
 	root = ctx.screen->root;
-
-	for (
-		sdepth_iter = xcb_screen_allowed_depths_iterator( ctx.screen );
-		sdepth_iter.rem;
-		xcb_depth_next( &sdepth_iter )
-	) {
-		xcb_depth_t *sdepth_data = sdepth_iter.data;
-		for (
-			xcb_visualtype_iterator_t visual_iter = xcb_depth_visuals_iterator( sdepth_data );
-			visual_iter.rem;
-			xcb_visualtype_next( &visual_iter )
-		) {
-			xcb_visualtype_t *visual_data = visual_iter.data;
-			if (sdepth_data->depth == 24 /*32*/ && !ctx.argb_visual) {
-				ctx.argb_visual = visual_data->visual_id;
-				printf( "argb visual = 0x%X\n", ctx.argb_visual );
-			}
-		}
-	}
 
 	setupscreen( ctx.conn, root );
 	setupshape( &ctx );
