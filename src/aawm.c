@@ -721,13 +721,54 @@ inline static void event_loop( struct aawm_ctx *a_ctx, xcb_generic_event_t *a_ev
 }
 
 
+void do_resize( struct aawm_ctx *a_ctx )
+{
+	printf( "RESIZING\n" );
+	aawm_window_t *parent = map_lookup( a_ctx->windows_list, a_ctx->resizing_win->parent );
+	int i;
+	int found = 0;
+	aawm_window_t *temp, *close, *client;
+	for (i = 0; found != 2 && i < parent->children_count; i++) {
+		temp = map_lookup( a_ctx->windows_list, parent->children[i] );
+		if (temp->role == AAWM_ROLE_CLOSE) { close = temp; found++; }
+		if (temp->role == AAWM_ROLE_CLIENT) { client = temp; found++; }
+	}
+	if (found) {
+		printf( "Close found at index %d, ID 0x%X / 0x%X\n", i, parent->children[i], close->wid );
+	} else {
+		printf( "Close not found!\n" );
+	}
+	// wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30
+	uint32_t values1[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y };
+	uint32_t values2[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 9 };
+	uint32_t value3 = a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19;
+	uint32_t values4[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 30 };
+	xcb_configure_window( a_ctx->conn, a_ctx->resizing_win->parent, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values1 );
+	xcb_configure_window( a_ctx->conn, a_ctx->resizing_event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values2 );
+	xcb_configure_window( a_ctx->conn, close->wid, XCB_CONFIG_WINDOW_X, &value3 );
+	xcb_configure_window( a_ctx->conn, client->wid, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values4 );
+	xcb_flush( a_ctx->conn );
+}
+
+
 void events( struct aawm_ctx *a_ctx )
 {
 	while (1) {
 		// TODO: When resizing windows, we want to switch from blocking to non-blocking, to only act on the latest available pointer position
 		// Use xcb_poll_for_event or xcb_poll_for_queued_event
-		xcb_generic_event_t *ev = xcb_wait_for_event( a_ctx->conn );
-		// ev = xcb_poll_for_event( a_ctx->conn );
+		xcb_generic_event_t *ev;
+
+		if (a_ctx->resizing) {
+			ev = xcb_poll_for_event( a_ctx->conn );
+			if (ev == NULL) {
+				do_resize( a_ctx );
+				continue;
+			}
+		} else {
+			ev = xcb_wait_for_event( a_ctx->conn );
+		}
+
+
 		switch (ev->response_type & ~0x80) {
 
 			case 0:
@@ -1071,6 +1112,10 @@ void events( struct aawm_ctx *a_ctx )
 					uint32_t mask = XCB_CW_CURSOR;
 					uint32_t value = 0; // None
 					xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, e->event, mask, &value ) );
+				} else if (a_ctx->resizing) {
+					printf( "We were resizing\n" );
+					do_resize( a_ctx );
+					a_ctx->resizing = false;
 				} else {
 					aawm_window_t *win = map_lookup( a_ctx->windows_list, e->event );
 					if (win->role != AAWM_ROLE_FRAME) {
@@ -1136,31 +1181,11 @@ void events( struct aawm_ctx *a_ctx )
 					xcb_configure_window( a_ctx->conn, e->event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values );
 					xcb_flush( a_ctx->conn );
 				} else if (win && win->role == AAWM_ROLE_RESIZE) {
-					printf( "RESIZING\n" );
-					aawm_window_t *parent = map_lookup( a_ctx->windows_list, win->parent );
-					int i;
-					int found = 0;
-					aawm_window_t *temp, *close, *client;
-					for (i = 0; found != 2 && i < parent->children_count; i++) {
-						temp = map_lookup( a_ctx->windows_list, parent->children[i] );
-						if (temp->role == AAWM_ROLE_CLOSE) { close = temp; found++; }
-						if (temp->role == AAWM_ROLE_CLIENT) { client = temp; found++; }
-					}
-					if (found) {
-						printf( "Close found at index %d, ID 0x%X / 0x%X\n", i, parent->children[i], close->wid );
-					} else {
-						printf( "Close not found!\n" );
-					}
-					// wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30
-					uint32_t values1[] = { e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, e->root_y + a_ctx->window_height_offset - a_ctx->window_origin_y };
-					uint32_t values2[] = { e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19, e->root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 9 };
-					uint32_t value3 = e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19;
-					uint32_t values4[] = { e->root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, e->root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 30 };
-					xcb_configure_window( a_ctx->conn, win->parent, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values1 );
-					xcb_configure_window( a_ctx->conn, e->event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values2 );
-					xcb_configure_window( a_ctx->conn, close->wid, XCB_CONFIG_WINDOW_X, &value3 );
-					xcb_configure_window( a_ctx->conn, client->wid, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values4 );
-					xcb_flush( a_ctx->conn );
+					a_ctx->resizing = true;
+					a_ctx->resizing_win = win;
+					a_ctx->resizing_root_x = e->root_x;
+					a_ctx->resizing_root_y = e->root_y;
+					a_ctx->resizing_event = e->event;
 				}
 			}
 			break;

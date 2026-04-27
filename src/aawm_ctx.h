@@ -32,6 +32,10 @@ struct aawm_ctx {
 	// Not wise to put this here, also we will have to take into account the possibility of XInput 2 multiple pointers feature (MPX)
 	bool moving;
 	bool resizing;
+	struct aawm_window* resizing_win;
+	int resizing_root_x;
+	int resizing_root_y;
+	xcb_window_t resizing_event;
 	int motion_origin_x;
 	int motion_origin_y;
 	int motion_rel_x;
