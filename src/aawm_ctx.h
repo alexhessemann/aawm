@@ -52,6 +52,8 @@ struct aawm_ctx {
 	xcb_cursor_t fleur; // 52
 	xcb_cursor_t pirate; // 88
 	xcb_cursor_t sizing; // 120
+	// For tests:
+	xcb_pixmap_t tartan_pix;
 };
 
 #endif
