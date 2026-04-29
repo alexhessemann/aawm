@@ -371,6 +371,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	map_add( a_ctx->windows_list, xid, resize_win );
 
 	aawm_window_add_child( frame_win, client_win->wid );
+	// Uncommenting these causes a crash ???
 //	aawm_window_add_child( frame_win, titleb_win->wid );
 //	aawm_window_add_child( frame_win, resizeb_win->wid );
 	aawm_window_add_child( /*titleb_win*/frame_win, close_win->wid );
@@ -429,23 +430,26 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t values[] = { a_ctx->tartan_pix, 0x7F00FF00, a_ctx->screen_colormap };
 	uint32_t values2[] = { 0xFF0000 };
 	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE };
+	uint32_t values4[] = { 0x0FF };
 
 	xcb_get_geometry_reply_t *wgeom = xcb_get_geometry_reply( a_ctx->conn, geom_cookie, NULL );
 
 //	if (wgeom->width > a_ctx->screen->width_in_pixels
 
-//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->screen_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
-	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, a_ctx->screen_depth, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
-//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->screen_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
-	/*xcb_generic_error_t **/error = xcb_request_check( a_ctx->conn, cookie );
+	// Solid color...
+//	cookie = xcb_create_window_checked( a_ctx->conn, a_ctx->screen_depth, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+//	// ... or pattern ...
+	cookie = xcb_create_window_checked( a_ctx->conn, a_ctx->screen_depth, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+	error = xcb_request_check( a_ctx->conn, cookie );
 	if (error != NULL) {
 		printf( "map_request_reparent: Create window ERROR type %d, code %d\n", error->response_type, error->error_code );
 	}
 
-//	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, a_ctx->screen_depth/*XCB_COPY_FROM_PARENT*/, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual/*XCB_COPY_FROM_PARENT*/, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+	// ... or solid color & unchecked
+//	cookie = xcb_create_window( a_ctx->conn, a_ctx->screen_depth, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
 
-	/*xcb_void_cookie_t*/ cookie = xcb_change_window_attributes_checked( a_ctx->conn, frame_win->wid, event_mask, &event_mask_values );
-	/*xcb_generic_error_t **/error = xcb_request_check( a_ctx->conn, cookie );
+	cookie = xcb_change_window_attributes_checked( a_ctx->conn, frame_win->wid, event_mask, &event_mask_values );
+	error = xcb_request_check( a_ctx->conn, cookie );
 	if (error != NULL) {
 		printf( "map_request_reparent: Change window attributes ERROR type %d, code %d\n", error->response_type, error->error_code );
 	}
@@ -453,7 +457,6 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t prop_test = XCB_EVENT_MASK_PROPERTY_CHANGE;
 	xcb_request_check( a_ctx->conn, xcb_change_window_attributes_checked( a_ctx->conn, client_win->wid, XCB_CW_EVENT_MASK, &prop_test ) );
 
-//	xcb_generic_error_t * error;
 	xcb_font_t fid = xcb_generate_id( a_ctx->conn );
 //	error = xcb_request_check( a_ctx->conn, xcb_open_font_checked( a_ctx->conn, fid, 3, "6x9" ) );
 	error = xcb_request_check( a_ctx->conn, xcb_open_font_checked( a_ctx->conn, fid, 56, "-adobe-times-medium-r-normal--0-0-100-100-p-0-iso10646-1" ) );
@@ -472,6 +475,14 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 		printf( "map_request_reparent: CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
 	}
 //	error = xcb_request_check( a_ctx->conn, xcb_poly_text_8_checked( a_ctx->conn, frame_win->wid, gc, 30, 10, 4, (const unsigned char *)"plop" ) );
+
+	// Create the other windows:
+
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, titleb_win->wid, frame_win->wid, 0, 0, wgeom->width, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values4 );
+	xcb_map_window( a_ctx->conn, titleb_win->wid );
+
+	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, resizeb_win->wid, frame_win->wid, 0, wgeom->height + 21, wgeom->width, 9, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL, values4 );
+	xcb_map_window( a_ctx->conn, resizeb_win->wid );
 
 	xcb_create_window( a_ctx->conn, XCB_COPY_FROM_PARENT, util_win->wid, frame_win->wid, 0, 0, 19, 19, 0, XCB_COPY_FROM_PARENT, XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, values3 );
 	xcb_map_window( a_ctx->conn, util_win->wid );
@@ -754,8 +765,6 @@ void do_resize( struct aawm_ctx *a_ctx )
 void events( struct aawm_ctx *a_ctx )
 {
 	while (1) {
-		// TODO: When resizing windows, we want to switch from blocking to non-blocking, to only act on the latest available pointer position
-		// Use xcb_poll_for_event or xcb_poll_for_queued_event
 		xcb_generic_event_t *ev;
 
 		if (a_ctx->resizing) {
@@ -1504,7 +1513,7 @@ int main()
 		print_render_data( &ctx );
 	}*/
 
-	check_xinputs( &ctx);
+	check_xinputs( &ctx );
 
 	create_cursors( &ctx );
 	// Set a cursor on root
