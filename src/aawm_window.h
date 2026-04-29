@@ -9,8 +9,8 @@ typedef enum aawm_window_role_t {
 	AAWM_ROLE_CLIENT = 1, // Client (non-WM) window
 	AAWM_ROLE_FRAME = 2, // WM frame around client
 	// Bars
-	AAWM_TITLE_BAR = 3,
-	AAWM_RESIZE_BAR = 4,
+	AAWM_ROLE_TITLEBAR = 3,
+	AAWM_ROLE_RESIZEBAR = 4,
 	// Frame buttons:
 	AAWM_ROLE_CLOSE = 5,
 	AAWM_ROLE_UTILITY = 6,

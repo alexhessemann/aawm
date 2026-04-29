@@ -223,17 +223,12 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 					while (offset < prop_reply2->value_len) {
 						printf( "\n\t\tIcon %dx%d ", values2[offset], values2[offset+1] );
 
-						// XXX: We only need one colormap that we reuse.
-						xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
-						xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_colormap_checked ( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ? a_ctx->argb_visual : a_ctx->rgb_visual ) );
-						if (error != NULL) {
-							printf( "CreateColormap ERROR type %d, code %d\n", error->response_type, error->error_code );
-						}
+						xcb_generic_error_t * error;
 
 						xcb_window_t xid = xcb_generate_id( a_ctx->conn );
 						rem_width -=  values2[offset];
-						uint32_t values3[] = { 0, cmapid };
-						error = xcb_request_check( a_ctx->conn, xcb_create_window_checked( a_ctx->conn, a_ctx->argb_visual ? 32 : a_ctx->rgb_depth, xid, a_ctx->screen->root, rem_width, a_ctx->screen->height_in_pixels - values2[offset+1], values2[offset], values2[offset+1], 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual ? a_ctx->argb_visual : a_ctx->rgb_visual, XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values3 ) );
+						uint32_t values3[] = { 0, a_ctx->screen_colormap };
+						error = xcb_request_check( a_ctx->conn, xcb_create_window_checked( a_ctx->conn, a_ctx->screen_depth, xid, a_ctx->screen->root, rem_width, a_ctx->screen->height_in_pixels - values2[offset+1], values2[offset], values2[offset+1], 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual, XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values3 ) );
 						if (error != NULL) {
 							printf( "CreateWindow ERROR type %d, code %d\n", error->response_type, error->error_code );
 						}
@@ -244,7 +239,7 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 						}
 						xcb_map_window( a_ctx->conn, xid );
 						// XXX: Only works with depth 24 & 32
-						xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, xid, gc, values2[offset], values2[offset+1], 0, 0, 0, a_ctx->argb_visual ? 32 : a_ctx->rgb_depth, 4 * values2[offset] * values2[offset+1], (uint8_t *) (&values2[offset+2]) );
+						xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, xid, gc, values2[offset], values2[offset+1], 0, 0, 0, a_ctx->screen_depth, 4 * values2[offset] * values2[offset+1], (uint8_t *) (&values2[offset+2]) );
 
 						offset += 2 + values2[offset] * values2[offset+1];
 					}
@@ -359,6 +354,10 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	aawm_window_t *client_win = aawm_allocate_window( a_ev->window, AAWM_ROLE_CLIENT, frame_win->wid );
 	map_add( a_ctx->windows_list, a_ev->window, client_win );
 	xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *titleb_win = aawm_allocate_window( xid, AAWM_ROLE_TITLEBAR, frame_win->wid );
+	xid = xcb_generate_id( a_ctx->conn );
+	aawm_window_t *resizeb_win = aawm_allocate_window( xid, AAWM_ROLE_RESIZEBAR, frame_win->wid );
+	xid = xcb_generate_id( a_ctx->conn );
 	aawm_window_t *close_win = aawm_allocate_window( xid, AAWM_ROLE_CLOSE, frame_win->wid );
 	map_add( a_ctx->windows_list, xid, close_win );
 	xid = xcb_generate_id( a_ctx->conn );
@@ -372,10 +371,12 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	map_add( a_ctx->windows_list, xid, resize_win );
 
 	aawm_window_add_child( frame_win, client_win->wid );
-	aawm_window_add_child( frame_win, close_win->wid );
-	aawm_window_add_child( frame_win, util_win->wid );
-	aawm_window_add_child( frame_win, minmax_win->wid );
-	aawm_window_add_child( frame_win, resize_win->wid );
+//	aawm_window_add_child( frame_win, titleb_win->wid );
+//	aawm_window_add_child( frame_win, resizeb_win->wid );
+	aawm_window_add_child( /*titleb_win*/frame_win, close_win->wid );
+	aawm_window_add_child( /*titleb_win*/frame_win, util_win->wid );
+	aawm_window_add_child( /*titleb_win*/frame_win, minmax_win->wid );
+	aawm_window_add_child( /*resizeb_win*/frame_win, resize_win->wid );
 
 	// Read, parse and display properties of the client
 
@@ -421,17 +422,11 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	uint32_t mask;
 	uint32_t values_m[3];
 
-	xcb_colormap_t cmapid = xcb_generate_id( a_ctx->conn );
-	xcb_void_cookie_t cookie = xcb_create_colormap_checked( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual ? a_ctx->argb_visual : a_ctx->rgb_visual );
-	xcb_generic_error_t *error = xcb_request_check( a_ctx->conn, cookie );
-	if (error != NULL) {
-		printf( "map_request_reparent: Create colormap ERROR type %d, code %d\n", error->response_type, error->error_code );
-	}
+	xcb_void_cookie_t cookie;
+	xcb_generic_error_t *error;
 
-//	xcb_create_colormap( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, cmapid, a_ctx->screen->root, a_ctx->argb_visual );
-
-//	uint32_t values[] = { 0x0FF, 0x7F00FF00, cmapid };
-	uint32_t values[] = { a_ctx->tartan_pix, 0x7F00FF00, cmapid };
+//	uint32_t values[] = { 0x0FF, 0x7F00FF00, a_ctx->screen_colormap };
+	uint32_t values[] = { a_ctx->tartan_pix, 0x7F00FF00, a_ctx->screen_colormap };
 	uint32_t values2[] = { 0xFF0000 };
 	uint32_t values3[] = { 0xFF0000, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE };
 
@@ -439,15 +434,15 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 //	if (wgeom->width > a_ctx->screen->width_in_pixels
 
-//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->argb_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
-	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, 32, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
-//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->argb_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
+//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->screen_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
+	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, a_ctx->screen_depth, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->screen_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
 	/*xcb_generic_error_t **/error = xcb_request_check( a_ctx->conn, cookie );
 	if (error != NULL) {
 		printf( "map_request_reparent: Create window ERROR type %d, code %d\n", error->response_type, error->error_code );
 	}
 
-//	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, 32/*XCB_COPY_FROM_PARENT*/, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual/*XCB_COPY_FROM_PARENT*/, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+//	/*xcb_void_cookie_t cookie =*/ xcb_create_window( a_ctx->conn, a_ctx->screen_depth/*XCB_COPY_FROM_PARENT*/, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->screen_visual/*XCB_COPY_FROM_PARENT*/, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
 
 	/*xcb_void_cookie_t*/ cookie = xcb_change_window_attributes_checked( a_ctx->conn, frame_win->wid, event_mask, &event_mask_values );
 	/*xcb_generic_error_t **/error = xcb_request_check( a_ctx->conn, cookie );
@@ -1317,11 +1312,9 @@ void print_render_data( struct aawm_ctx * a_ctx )
 	}
 }
 
-// Sets a_ctx.screen, a_ctx.rgb_depth, a_ctx.rgb_visual, and a_ctx.argb_visual if available.
+// Sets a_ctx.screen, a_ctx.screen_depth, a_ctx.screen_visual and a_ctx.screen_colormap.
 void set_screen_defaults( int a_scrno, const struct xcb_setup_t *a_setup, struct aawm_ctx *a_ctx )
 {
-	int root_visual_depth = 0;
-
 	/* Find our screen. */
 	/* TODO: ignore scrno and try to tie to all screens */
 	xcb_screen_iterator_t iter = xcb_setup_roots_iterator( a_setup );
@@ -1336,46 +1329,41 @@ void set_screen_defaults( int a_scrno, const struct xcb_setup_t *a_setup, struct
 		xcb_depth_next( &sdepth_iter )
 	) {
 		xcb_depth_t *sdepth_data = sdepth_iter.data;
-		if (sdepth_data->visuals_len && sdepth_data->depth > a_ctx->rgb_depth) {
-			if (sdepth_data->depth < 32) a_ctx->rgb_depth = sdepth_data->depth; //rgb_visual should be distinct from argb_visual
+		if (sdepth_data->visuals_len && sdepth_data->depth > a_ctx->screen_depth) {
+			a_ctx->screen_depth = sdepth_data->depth;
+			a_ctx->screen_visual = 0;
 			for (
 				xcb_visualtype_iterator_t visual_iter = xcb_depth_visuals_iterator( sdepth_data );
 				visual_iter.rem;
 				xcb_visualtype_next( &visual_iter )
 			) {
 				xcb_visualtype_t *visual_data = visual_iter.data;
-				if (sdepth_data->depth == 32) {
-					const char *txt;
-					if (!a_ctx->argb_visual) {
-						a_ctx->argb_visual = visual_data->visual_id;
+				const char *txt;
+				if (!a_ctx->screen_visual) {
+					a_ctx->screen_visual = visual_data->visual_id;
+					if (visual_data->visual_id == a_ctx->screen->root_visual) {
+						txt = " (root visual found)";
+					} else {
 						txt="";
+					}
+				} else {
+					if (visual_data->visual_id == a_ctx->screen->root_visual) {
+						a_ctx->screen_visual = visual_data->visual_id;
+						txt = " (root visual found: replacing)";
 					} else {
 						txt=" (ignored)";
 					}
-					printf( "argb visual = 0x%X%s\n", visual_data->visual_id, txt );
-				} else {
-					const char *txt;
-					if (!a_ctx->rgb_visual) {
-						a_ctx->rgb_visual = visual_data->visual_id;
-						if (visual_data->visual_id == a_ctx->screen->root_visual) {
-							root_visual_depth = sdepth_data->depth; 
-							txt = " (root visual found)";
-						} else {
-							txt = "";
-						}
-					} else {
-						if (visual_data->visual_id == a_ctx->screen->root_visual) {
-							a_ctx->rgb_visual = visual_data->visual_id;
-							root_visual_depth = sdepth_data->depth; 
-							txt = " (root visual found: replacing)";
-						} else {
-							txt = " (ignored)";
-						}
-					}
-					printf( "rgb visual = 0x%X%s\n", visual_data->visual_id, txt );
 				}
+				printf( "screen visual = 0x%X%s\n", visual_data->visual_id, txt );
 			}
 		}
+	}
+
+	a_ctx->screen_colormap = xcb_generate_id( a_ctx->conn );
+	xcb_void_cookie_t cookie = xcb_create_colormap_checked( a_ctx->conn, XCB_COLORMAP_ALLOC_NONE, a_ctx->screen_colormap, a_ctx->screen->root, a_ctx->screen_visual );
+	xcb_generic_error_t *error = xcb_request_check( a_ctx->conn, cookie );
+	if (error != NULL) {
+		printf( "%s: Create colormap ERROR type %d, code %d\n", __func__, error->response_type, error->error_code );
 	}
 }
 
@@ -1458,7 +1446,7 @@ void prepare_background_pixmap( struct aawm_ctx *a_ctx )
 //				printf("(%02x %02x %02x %02x) ", buffer[i], buffer[i+1], buffer[i+2], buffer[i+3] );
 			}
 			xcb_pixmap_t tartan_pix = xcb_generate_id( a_ctx->conn );
-			xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_pixmap_checked( a_ctx->conn, 32/*24*/, tartan_pix, a_ctx->screen->root, image.width, image.height ) );
+			xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_pixmap_checked( a_ctx->conn, a_ctx->screen_depth, tartan_pix, a_ctx->screen->root, image.width, image.height ) );
 			if (error != NULL) {
 				printf( "CreatePixmap ERROR type %d, code %d\n", error->response_type, error->error_code );
 			}
@@ -1467,7 +1455,7 @@ void prepare_background_pixmap( struct aawm_ctx *a_ctx )
 			if (error != NULL) {
 				printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
 			}
-			xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, tartan_pix, gc, image.width, image.height, 0, 0, 0, 32/*24*/, 4 * image.width * image.height, buffer );
+			xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, tartan_pix, gc, image.width, image.height, 0, 0, 0, a_ctx->screen_depth, 4 * image.width * image.height, buffer );
 			a_ctx->tartan_pix = tartan_pix;
 		}
 	}
@@ -1484,9 +1472,7 @@ int main()
 	const struct xcb_setup_t * setup;
 	xcb_drawable_t root; // XXX: per managed screen
 
-	ctx.argb_visual = 0; // XXX: per managed screen
-	ctx.rgb_visual = 0; // XXX: per managed screen
-	ctx.rgb_depth= 0; // XXX: per managed screen
+	ctx.screen_depth = 0; // XXX: per managed screen
 	ctx.shape_base = -1;
 	ctx.render_base = -1;
 	ctx.input_base = -1;

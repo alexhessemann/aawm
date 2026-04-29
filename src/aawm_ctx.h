@@ -8,18 +8,18 @@
 #include "map.h"
 
 struct aawm_screen_ctx {
-	uint32_t rgb_depth;
-	uint32_t rgb_visual;
-	uint32_t argb_visual;
+	uint8_t depth;
+	xcb_visualid_t visual;
 	xcb_colormap_t colormap;
 };
 
 struct aawm_ctx {
 	xcb_connection_t *conn;
 	xcb_screen_t *screen;
-	uint32_t rgb_depth;
-	uint32_t rgb_visual; // Visuals and colormap are per-screen
-	uint32_t argb_visual; // Visuals and colormap are per-screen
+	// Per-screen values, use the same set for everything.
+	uint8_t screen_depth;
+	xcb_visualid_t screen_visual;
+	xcb_colormap_t screen_colormap;
 	// X extensions => set a structure with the server's configuration
 	int shape_base;
 	int render_base;
