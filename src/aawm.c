@@ -440,7 +440,8 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 //	if (wgeom->width > a_ctx->screen->width_in_pixels
 
 //	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->argb_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
-	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->argb_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
+	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, 32, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, a_ctx->argb_visual, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, values );
+//	/*xcb_void_cookie_t*/ cookie = xcb_create_window_checked( a_ctx->conn, /*32*/XCB_COPY_FROM_PARENT, frame_win->wid, a_ctx->screen->root, wgeom->x - 4/*(border_width-1)*/, wgeom->y - 4, wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30, 5 /*border_width*/, XCB_WINDOW_CLASS_INPUT_OUTPUT, /*a_ctx->argb_visual*/XCB_COPY_FROM_PARENT, XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL/* | XCB_CW_COLORMAP*/, values );
 	/*xcb_generic_error_t **/error = xcb_request_check( a_ctx->conn, cookie );
 	if (error != NULL) {
 		printf( "map_request_reparent: Create window ERROR type %d, code %d\n", error->response_type, error->error_code );
@@ -1451,15 +1452,13 @@ void prepare_background_pixmap( struct aawm_ctx *a_ctx )
 		buffer = malloc( PNG_IMAGE_SIZE( image ) );
 		if (buffer != NULL) {
 			png_image_finish_read( &image, NULL, buffer, 0, NULL );
-			png_alloc_size_t buffer_size = 4*image.width*image.height;
-			uint8_t *buffer2 = malloc(buffer_size);
-			int result = png_image_write_to_memory(&image, buffer2, &buffer_size, 0, buffer, 0, NULL);
-			printf( "png_image_write_to_memory returned %d\n", result );
-/*			for (int i=0; i<4*image.width*image.height; i+=4) {
-				printf("(%02x %02x %02x %02x) ", buffer2[i], buffer2[i+1], buffer2[i+2], buffer2[i+3] );
-			}*/
+			uint8_t val=0;
+			for (int i=0; i<4*image.width*image.height; i+=4) {
+				buffer[i+3] = val++;
+//				printf("(%02x %02x %02x %02x) ", buffer[i], buffer[i+1], buffer[i+2], buffer[i+3] );
+			}
 			xcb_pixmap_t tartan_pix = xcb_generate_id( a_ctx->conn );
-			xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_pixmap_checked( a_ctx->conn, 24, tartan_pix, a_ctx->screen->root, image.width, image.height ) );
+			xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_pixmap_checked( a_ctx->conn, 32/*24*/, tartan_pix, a_ctx->screen->root, image.width, image.height ) );
 			if (error != NULL) {
 				printf( "CreatePixmap ERROR type %d, code %d\n", error->response_type, error->error_code );
 			}
@@ -1468,7 +1467,7 @@ void prepare_background_pixmap( struct aawm_ctx *a_ctx )
 			if (error != NULL) {
 				printf( "CreateGC ERROR type %d, code %d\n", error->response_type, error->error_code );
 			}
-			xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, tartan_pix, gc, image.width, image.height, 0, 0, 0, 24, 4 * image.width * image.height, buffer2 );
+			xcb_put_image( a_ctx->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, tartan_pix, gc, image.width, image.height, 0, 0, 0, 32/*24*/, 4 * image.width * image.height, buffer );
 			a_ctx->tartan_pix = tartan_pix;
 		}
 	}
