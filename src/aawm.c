@@ -315,8 +315,85 @@ void read_property( struct aawm_ctx* a_ctx, xcb_window_t a_window, xcb_atom_t a_
 			break;
 		case XCB_ATOM_WM_SIZE_HINTS:
 			{
+				assert( xcb_get_property_value_length( prop_reply ) <= sizeof( xcb_size_hints_t ));
+				// Some programs like xev don't send the full struct.
+				if (xcb_get_property_value_length( prop_reply ) != sizeof( xcb_size_hints_t )) {
+					printf("Prop value len = %d vs struct len %zd\n", xcb_get_property_value_length( prop_reply ), sizeof( xcb_size_hints_t ) );
+				}
 				xcb_size_hints_t* hints = (xcb_size_hints_t*) xcb_get_property_value( prop_reply );
-				printf( " flags 0x%X geom [%d,%d,%d,%d+%d]x[%d,%d,%d,%d+%d]+%d+%d aspect ratio [%d/%d, %d/%d] gravity %d", hints->flags, hints->min_width, hints->base_width, hints->width, hints->max_width, hints->width_inc, hints->min_height, hints->base_height, hints->height, hints->max_height, hints->height_inc, hints->x, hints->y, hints->min_aspect_num, hints->min_aspect_den, hints->max_aspect_num, hints->max_aspect_den, hints->win_gravity );
+				printf( " flags 0x%X geom [%d,%d,%d,%d+%d]×[%d,%d,%d,%d+%d]+%d+%d aspect ratio [%d/%d, %d/%d] gravity %d", hints->flags, hints->min_width, hints->base_width, hints->width, hints->max_width, hints->width_inc, hints->min_height, hints->base_height, hints->height, hints->max_height, hints->height_inc, hints->x, hints->y, hints->min_aspect_num, hints->min_aspect_den, hints->max_aspect_num, hints->max_aspect_den, hints->win_gravity );
+				printf( "\n\t geom [min,base,(req),max±inc] [" );
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) {
+					printf( "%d,", hints->min_width );
+				} else {
+					printf( "-," );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) {
+					printf( "%d,", hints->base_width );
+				} else {
+					printf( "-," );
+				}
+				if (hints->flags & (XCB_ICCCM_SIZE_HINT_US_SIZE | XCB_ICCCM_SIZE_HINT_P_SIZE)) {
+					printf( "%c%d%c,", hints->flags & XCB_ICCCM_SIZE_HINT_US_SIZE ? hints->flags & XCB_ICCCM_SIZE_HINT_P_SIZE ? '<' : '(' : '[', hints->width, hints->flags & XCB_ICCCM_SIZE_HINT_US_SIZE ? hints->flags & XCB_ICCCM_SIZE_HINT_P_SIZE ? '>' : ')' : ']' );
+				} else {
+					printf( "-," );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) {
+					printf( "%d", hints->max_width );
+				} else {
+					printf( "-" );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_RESIZE_INC) {
+					printf( "±%d", hints->width_inc );
+				}
+				printf( "]×[" );
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) {
+					printf( "%d,", hints->min_height );
+				} else {
+					printf( "-," );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) {
+					printf( "%d,", hints->base_height );
+				} else {
+					printf( "-," );
+				}
+				if (hints->flags & (XCB_ICCCM_SIZE_HINT_US_SIZE | XCB_ICCCM_SIZE_HINT_P_SIZE)) {
+					printf( "%c%d%c,", hints->flags & XCB_ICCCM_SIZE_HINT_US_SIZE ? hints->flags & XCB_ICCCM_SIZE_HINT_P_SIZE ? '<' : '(' : '[', hints->height, hints->flags & XCB_ICCCM_SIZE_HINT_US_SIZE ? hints->flags & XCB_ICCCM_SIZE_HINT_P_SIZE ? '>' : ')' : ']' );
+				} else {
+					printf( "-," );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) {
+					printf( "%d", hints->max_height );
+				} else {
+					printf( "-" );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_RESIZE_INC) {
+					printf( "±%d", hints->height_inc );
+				}
+				printf( "]" );
+				if (hints->flags & (XCB_ICCCM_SIZE_HINT_US_POSITION | XCB_ICCCM_SIZE_HINT_P_POSITION)) {
+					printf( "%c+%d+%d%c,", hints->flags & XCB_ICCCM_SIZE_HINT_US_POSITION ? hints->flags & XCB_ICCCM_SIZE_HINT_P_POSITION ? '<' : '(' : '[', hints->x, hints->y, hints->flags & XCB_ICCCM_SIZE_HINT_US_POSITION ? hints->flags & XCB_ICCCM_SIZE_HINT_P_POSITION ? '>' : ')' : ']' );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_ASPECT) {
+					printf( " aspect ratio [%d/%d, %d/%d]", hints->min_aspect_num, hints->min_aspect_den, hints->max_aspect_num, hints->max_aspect_den );
+				}
+				if (hints->flags & XCB_ICCCM_SIZE_HINT_P_WIN_GRAVITY) {
+					const static char* gs;
+					switch (hints->win_gravity) {
+						case XCB_GRAVITY_BIT_FORGET: gs = "forget/unmap"; break;
+						case XCB_GRAVITY_NORTH_WEST: gs = "north-west"; break;
+						case XCB_GRAVITY_NORTH: gs = "north"; break;
+						case XCB_GRAVITY_NORTH_EAST: gs = "north-east"; break;
+						case XCB_GRAVITY_WEST: gs = "west"; break;
+						case XCB_GRAVITY_CENTER: gs = "center"; break;
+						case XCB_GRAVITY_EAST: gs = "east"; break;
+						case XCB_GRAVITY_SOUTH_WEST: gs = "south-west"; break;
+						case XCB_GRAVITY_SOUTH: gs = "south"; break;
+						case XCB_GRAVITY_SOUTH_EAST: gs = "south-east"; break;
+						case XCB_GRAVITY_STATIC: gs = "static"; break;
+					}
+					printf( " gravity %s", gs );
+				}
 			}
 			break;
 		default:

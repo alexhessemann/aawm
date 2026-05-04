@@ -3,8 +3,9 @@
 
 #include <stdbool.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_icccm.h>
 
-typedef enum aawm_window_role_t {
+typedef enum aawm_window_role {
 	AAWM_ROLE_ROOT = 0, // Root window
 	AAWM_ROLE_CLIENT = 1, // Client (non-WM) window
 	AAWM_ROLE_FRAME = 2, // WM frame around client
@@ -24,12 +25,13 @@ typedef struct aawm_window {
 	xcb_window_t parent;
 	size_t children_count;
 	xcb_window_t *children;
+	xcb_size_hints_t *size_hints;
 } aawm_window_t;
 
-typedef struct aawm_client_window {
+/*typedef struct aawm_client_window {
 //	struct aawm_window; // require -fms-extensions in CFLAGS
 	int min_x_size;
-} aawm_client_window_t;
+} aawm_client_window_t;*/
 
 aawm_window_t * aawm_allocate_window( xcb_window_t a_wid, aawm_window_role_t a_role, xcb_window_t a_parent );
 bool aawm_window_add_child( aawm_window_t *a_parent, xcb_window_t a_child );
