@@ -507,6 +507,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	xcb_map_window( a_ctx->conn, close_win->wid );
 
 	xcb_reparent_window( a_ctx->conn, client_win->wid, frame_win->wid, 0, 20 );
+	xcb_change_save_set( a_ctx->conn, XCB_SET_MODE_INSERT, client_win->wid );
 	xcb_map_window( a_ctx->conn, client_win->wid );
 	xcb_map_window( a_ctx->conn, frame_win->wid );
 	
@@ -734,31 +735,39 @@ inline static void event_loop( struct aawm_ctx *a_ctx, xcb_generic_event_t *a_ev
 
 void do_resize( struct aawm_ctx *a_ctx )
 {
-	printf( "RESIZING\n" );
-	aawm_window_t *parent = map_lookup( a_ctx->windows_list, a_ctx->resizing_win->parent );
-	int i;
-	int found = 0;
-	aawm_window_t *temp, *close, *client;
-	for (i = 0; found != 2 && i < parent->children_count; i++) {
-		temp = map_lookup( a_ctx->windows_list, parent->children[i] );
-		if (temp->role == AAWM_ROLE_CLOSE) { close = temp; found++; }
-		if (temp->role == AAWM_ROLE_CLIENT) { client = temp; found++; }
+	if (a_ctx->resizing_root_x != a_ctx->resizing_old_root_x || a_ctx->resizing_root_y != a_ctx->resizing_old_root_y) {
+		printf( "RESIZING\n" );
+		aawm_window_t *parent = map_lookup( a_ctx->windows_list, a_ctx->resizing_win->parent );
+		if (parent) {
+			int i;
+			int found = 0;
+			aawm_window_t *temp, *close, *client;
+			for (i = 0; found != 2 && i < parent->children_count; i++) {
+				temp = map_lookup( a_ctx->windows_list, parent->children[i] );
+				if (temp->role == AAWM_ROLE_CLOSE) { close = temp; found++; }
+				if (temp->role == AAWM_ROLE_CLIENT) { client = temp; found++; }
+			}
+			if (found) {
+				printf( "Close found at index %d, ID 0x%X / 0x%X\n", i, parent->children[i], close->wid );
+			} else {
+				printf( "Close not found!\n" );
+			}
+			// wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30
+			uint32_t values1[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y };
+			uint32_t values2[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 9 };
+			uint32_t value3 = a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19;
+			uint32_t values4[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 30 };
+			xcb_configure_window( a_ctx->conn, a_ctx->resizing_win->parent, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values1 );
+			xcb_configure_window( a_ctx->conn, a_ctx->resizing_event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values2 );
+			xcb_configure_window( a_ctx->conn, close->wid, XCB_CONFIG_WINDOW_X, &value3 );
+			xcb_configure_window( a_ctx->conn, client->wid, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values4 );
+			xcb_flush( a_ctx->conn );
+			a_ctx->resizing_old_root_x = a_ctx->resizing_root_x;
+			a_ctx->resizing_old_root_y = a_ctx->resizing_root_y;
+		} else {
+			a_ctx->resizing = false;
+		}
 	}
-	if (found) {
-		printf( "Close found at index %d, ID 0x%X / 0x%X\n", i, parent->children[i], close->wid );
-	} else {
-		printf( "Close not found!\n" );
-	}
-	// wgeom->width + 2 * wgeom->border_width, wgeom->height + 2 * wgeom->border_width + 30
-	uint32_t values1[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y };
-	uint32_t values2[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 9 };
-	uint32_t value3 = a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x - 19;
-	uint32_t values4[] = { a_ctx->resizing_root_x + a_ctx->window_width_offset - a_ctx->window_origin_x, a_ctx->resizing_root_y + a_ctx->window_height_offset - a_ctx->window_origin_y - 30 };
-	xcb_configure_window( a_ctx->conn, a_ctx->resizing_win->parent, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values1 );
-	xcb_configure_window( a_ctx->conn, a_ctx->resizing_event, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values2 );
-	xcb_configure_window( a_ctx->conn, close->wid, XCB_CONFIG_WINDOW_X, &value3 );
-	xcb_configure_window( a_ctx->conn, client->wid, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values4 );
-	xcb_flush( a_ctx->conn );
 }
 
 
@@ -1001,7 +1010,11 @@ void events( struct aawm_ctx *a_ctx )
 					case AAWM_ROLE_CLOSE: printf( "Button press in close gadget\n" ); break;
 					case AAWM_ROLE_UTILITY: printf( "Button press in utility gadget\n" ); break;
 					case AAWM_ROLE_MINMAX: printf( "Button press in minmax gadget\n" ); break;
-					case AAWM_ROLE_RESIZE: printf( "Button press in resize gadget\n" ); break;
+					case AAWM_ROLE_RESIZE:
+						printf( "Button press in resize gadget\n" );
+						a_ctx->resizing_old_root_x = e->root_x;
+						a_ctx->resizing_old_root_y = e->root_y;
+						break;
 					default: printf( "Button press in unknown type of window\n" );
 					}
 				} else {

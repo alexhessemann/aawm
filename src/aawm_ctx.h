@@ -35,6 +35,8 @@ struct aawm_ctx {
 	struct aawm_window* resizing_win;
 	int resizing_root_x;
 	int resizing_root_y;
+	int resizing_old_root_x;
+	int resizing_old_root_y;
 	xcb_window_t resizing_event;
 	int motion_origin_x;
 	int motion_origin_y;
