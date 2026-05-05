@@ -503,6 +503,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 	xcb_void_cookie_t cookie;
 	xcb_generic_error_t *error;
 
+	// Color values are ARGB (as an int32, but BGRA in memory on little-endian archs)
 //	uint32_t values[] = { 0x0FF, 0x7F00FF00, a_ctx->screen_colormap };
 	uint32_t values[] = { a_ctx->tartan_pix, 0x7F00FF00, a_ctx->screen_colormap };
 	uint32_t values2[] = { 0xFF0000 };
@@ -585,6 +586,7 @@ void map_request_reparent( struct aawm_ctx* a_ctx, xcb_map_request_event_t *a_ev
 
 	xcb_reparent_window( a_ctx->conn, client_win->wid, frame_win->wid, 0, 20 );
 	xcb_change_save_set( a_ctx->conn, XCB_SET_MODE_INSERT, client_win->wid );
+	if (a_ctx->shape_base) xcb_shape_select_input( a_ctx->conn, client_win->wid, 1 );
 	xcb_map_window( a_ctx->conn, client_win->wid );
 	xcb_map_window( a_ctx->conn, frame_win->wid );
 	
@@ -1365,10 +1367,14 @@ void events( struct aawm_ctx *a_ctx )
 			}
 			break;
 
-			// Unhandled
+			// Extensions & Unhandled
 
 			default:
-				printf( "Received unhandled event type %s%d\n", (ev->response_type & 0x80) ? "S" : "", ev->response_type & ~0x80 );
+				if ((ev->response_type & ~0x80) == a_ctx->shape_base + XCB_SHAPE_NOTIFY) {
+					printf( "Received shape notify event\n" );
+				} else {
+					printf( "Received unhandled event type %s%d\n", (ev->response_type & 0x80) ? "S" : "", ev->response_type & ~0x80 );
+				}
 			break;
 		}
 
@@ -1535,15 +1541,15 @@ void prepare_background_pixmap( struct aawm_ctx *a_ctx )
 	if (png_image_begin_read_from_file( &image, "tartan_pattern.png" ) != 0) {
 		printf( "Image of size %dx%d\n", image.width /*png_get_image_width()*/, image.height /*png_get_image_height*/ );
 		png_bytep buffer;
-		image.format = PNG_FORMAT_RGBA;
+		image.format = PNG_FORMAT_BGRA;
 		buffer = malloc( PNG_IMAGE_SIZE( image ) );
 		if (buffer != NULL) {
 			png_image_finish_read( &image, NULL, buffer, 0, NULL );
-			uint8_t val=0;
+/*			uint8_t val=0;
 			for (int i=0; i<4*image.width*image.height; i+=4) {
 				buffer[i+3] = val++;
 //				printf("(%02x %02x %02x %02x) ", buffer[i], buffer[i+1], buffer[i+2], buffer[i+3] );
-			}
+			}*/
 			xcb_pixmap_t tartan_pix = xcb_generate_id( a_ctx->conn );
 			xcb_generic_error_t * error = xcb_request_check( a_ctx->conn, xcb_create_pixmap_checked( a_ctx->conn, a_ctx->screen_depth, tartan_pix, a_ctx->screen->root, image.width, image.height ) );
 			if (error != NULL) {
