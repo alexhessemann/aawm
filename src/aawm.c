@@ -1371,7 +1371,14 @@ void events( struct aawm_ctx *a_ctx )
 
 			default:
 				if ((ev->response_type & ~0x80) == a_ctx->shape_base + XCB_SHAPE_NOTIFY) {
-					printf( "Received shape notify event\n" );
+					xcb_shape_notify_event_t* e = (xcb_shape_notify_event_t *) ev;
+					printf( "Received shape notify event type %d, shape kind = ", e->response_type );
+					switch (e->shape_kind) {
+						case 0: printf( "Bounding" ); break;
+						case 1: printf( "Clip" ); break;
+						case 2: printf( "Input" ); break;
+					}
+					printf( " for window 0x%X, shaped = %d, extents(x,y)=(%d,%d), extents(width,height)=(%d,%d), server time=%d, seq. number=%d\n", e->affected_window, e->shaped, e->extents_x, e->extents_y, e->extents_width, e->extents_height, e->server_time, e->sequence );
 				} else {
 					printf( "Received unhandled event type %s%d\n", (ev->response_type & 0x80) ? "S" : "", ev->response_type & ~0x80 );
 				}
