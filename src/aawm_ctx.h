@@ -21,6 +21,7 @@ struct aawm_ctx {
 	xcb_visualid_t screen_visual;
 	xcb_colormap_t screen_colormap;
 	// X extensions => set a structure with the server's configuration
+	int sync_base;
 	int shape_base;
 	int render_base;
 	int input_base;

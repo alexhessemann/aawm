@@ -1,4 +1,4 @@
-LDLIBS=-lxcb -lxcb-shape -lxcb-render -lxcb-xinput -lpng
+LDLIBS=-lxcb -lxcb-sync -lxcb-shape -lxcb-render -lxcb-xinput -lpng
 
 CFLAGS=-g -Wall
 

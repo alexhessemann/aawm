@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <xcb/xcb.h>
+#include <xcb/sync.h>
 #include <xcb/render.h>
 #include <xcb/shape.h>
 #include <xcb/xcb_icccm.h>
@@ -94,6 +95,21 @@ int setupscreen( xcb_connection_t *a_conn, xcb_drawable_t a_root )
 	}
 
 	return 0;
+}
+
+
+int setupsync( struct aawm_ctx* a_ctx )
+{
+	const xcb_query_extension_reply_t *extension = xcb_get_extension_data( a_ctx->conn, &xcb_sync_id );
+	if (!extension->present) {
+		printf( "No sync extension.\n" );
+		return -1;
+	}
+
+	a_ctx->sync_base = extension->first_event;
+	printf( "Sync base is %d\n", a_ctx->sync_base );
+
+	return a_ctx->sync_base;
 }
 
 
@@ -1606,6 +1622,7 @@ int main()
 	root = ctx.screen->root;
 
 	setupscreen( ctx.conn, root );
+	setupsync( &ctx );
 	setupshape( &ctx );
 	setuprender( &ctx );
 	setup_xinput( &ctx );
